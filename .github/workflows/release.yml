@@ -19,15 +19,19 @@ name: Release
 # Either layout works: every job first finds the folder holding tauri.conf.json
 # and builds there, so it does not matter how deep the app sits.
 
+# Build jobs compile platform bundles only (uploadUpdaterJson: false, no per-job
+# GitHub Release creation) to avoid parallel draft races and latest.json
+# overwrites. The final `publish-release` job creates/publishes the release and
+# uploads all installers + latest.json atomically on tag pushes.
+
 on:
   push:
     tags:
       - 'v*'
   workflow_dispatch:
 
-# Needed to create the release and upload files to it.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   # ---------------------------------------------------------------- Windows
@@ -67,25 +71,28 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          # The folder holding tauri.conf.json, found above.
+          # Build bundles only; `publish-release` creates the release & latest.json.
           projectPath: ${{ steps.app.outputs.path }}
-          # On a tag this creates a draft release; a manual run passes empty
-          # strings, which makes tauri-action build without publishing.
-          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
-          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('Rongyok Desk {0}', github.ref_name) || '' }}
-          releaseDraft: true
-          prerelease: false
+          uploadUpdaterJson: false
           args: --target x86_64-pc-windows-msvc
 
-      # Keep the installers on the run as well, so they can be downloaded even
-      # when no release was made.
+      - name: Verify Windows bundles exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          compgen -G "${{ steps.app.outputs.path }}/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe" >/dev/null
+          compgen -G "${{ steps.app.outputs.path }}/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi" >/dev/null
+
+      # Keep installers (and any .sig files when updater signing is enabled).
       - name: Upload the installers
         uses: actions/upload-artifact@v4
         with:
           name: windows-installers
           path: |
             ${{ steps.app.outputs.path }}/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            ${{ steps.app.outputs.path }}/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe.sig
             ${{ steps.app.outputs.path }}/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+            ${{ steps.app.outputs.path }}/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi.sig
           if-no-files-found: error
 
   # ------------------------------------------------------------------ macOS
@@ -137,17 +144,23 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: ${{ steps.app.outputs.path }}
-          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
-          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('Rongyok Desk {0}', github.ref_name) || '' }}
-          releaseDraft: true
-          prerelease: false
+          uploadUpdaterJson: false
           args: --target ${{ matrix.target }}
+
+      - name: Verify macOS bundle exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          compgen -G "${{ steps.app.outputs.path }}/target/${{ matrix.target }}/release/bundle/dmg/*.dmg" >/dev/null
 
       - name: Upload the disk image
         uses: actions/upload-artifact@v4
         with:
           name: macos-dmg-${{ matrix.arch }}
-          path: ${{ steps.app.outputs.path }}/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+          path: |
+            ${{ steps.app.outputs.path }}/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            ${{ steps.app.outputs.path }}/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
+            ${{ steps.app.outputs.path }}/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig
           if-no-files-found: error
 
   # ------------------------------------------------------------------ Linux
@@ -195,25 +208,160 @@ jobs:
           path: ${{ steps.app.outputs.path }}/dist/flatpak/*.flatpak
           if-no-files-found: error
 
-      # Attach the bundle to the same release tauri-action made. This job can
-      # finish before the others, so it waits for the release to appear. On a
-      # manual run there is no release and it just keeps the artifact.
-      - name: Attach the Flatpak to the release
-        if: startsWith(github.ref, 'refs/tags/')
+  # -------------------------------------------------------- Publish Release
+  publish-release:
+    name: Publish release & latest.json
+    needs: [windows, macos, flatpak]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Stage installers and generate latest.json
+        env:
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import datetime
+          import json
+          import os
+          import pathlib
+          import shutil
+
+          tag = os.environ["TAG"]
+          repo = os.environ["REPO"]
+          tag_version = tag.lstrip("v")
+
+          conf_files = [
+              p for p in pathlib.Path(".").rglob("tauri.conf.json")
+              if "target" not in p.parts and "node_modules" not in p.parts
+          ]
+          if not conf_files:
+              raise SystemExit("tauri.conf.json not found")
+          conf = json.loads(conf_files[0].read_text(encoding="utf-8"))
+          conf_version = conf["version"]
+          if tag_version != conf_version:
+              raise SystemExit(
+                  f"Tag version ({tag_version}) does not match tauri.conf.json ({conf_version})"
+              )
+
+          artifacts_root = pathlib.Path("release-artifacts")
+          stage_dir = pathlib.Path("dist-release")
+          stage_dir.mkdir(parents=True, exist_ok=True)
+
+          def find_single(subdir: str, suffix: str, required: bool = True):
+              base = artifacts_root / subdir
+              matches = sorted(
+                  p for p in base.rglob("*") if p.is_file() and p.name.endswith(suffix)
+              )
+              if not matches:
+                  if required:
+                      raise SystemExit(f"Missing required artifact *{suffix} in {base}")
+                  return None
+              if len(matches) > 1:
+                  raise SystemExit(f"Expected 1 *{suffix} in {base}, found {len(matches)}")
+              return matches[0]
+
+          def stage_file(src: pathlib.Path, dest_name: str | None = None) -> str:
+              # Normalize spaces to dots so local names match GitHub release asset URLs.
+              name = (dest_name or src.name).replace(" ", ".")
+              shutil.copy2(src, stage_dir / name)
+              return name
+
+          base_url = f"https://github.com/{repo}/releases/download/{tag}"
+
+          exe_src = find_single("windows-installers", ".exe")
+          exe_name = stage_file(exe_src)
+          exe_sig = find_single("windows-installers", ".exe.sig", required=False)
+
+          msi_src = find_single("windows-installers", ".msi")
+          msi_name = stage_file(msi_src)
+          msi_sig = find_single("windows-installers", ".msi.sig", required=False)
+
+          mac_arm_dmg = find_single("macos-dmg-aarch64", ".dmg")
+          mac_arm_name = stage_file(mac_arm_dmg)
+          mac_arm_tar = find_single("macos-dmg-aarch64", ".app.tar.gz", required=False)
+          mac_arm_sig = find_single("macos-dmg-aarch64", ".app.tar.gz.sig", required=False)
+
+          mac_x64_dmg = find_single("macos-dmg-x86_64", ".dmg")
+          mac_x64_name = stage_file(mac_x64_dmg)
+          mac_x64_tar = find_single("macos-dmg-x86_64", ".app.tar.gz", required=False)
+          mac_x64_sig = find_single("macos-dmg-x86_64", ".app.tar.gz.sig", required=False)
+
+          flatpak_src = find_single("linux-flatpak", ".flatpak")
+          flatpak_name = stage_file(flatpak_src)
+
+          platforms = {}
+          if exe_sig:
+              stage_file(exe_sig)
+              sig_text = exe_sig.read_text(encoding="utf-8").strip()
+              entry = {"url": f"{base_url}/{exe_name}", "signature": sig_text}
+              platforms["windows-x86_64-nsis"] = entry
+              platforms["windows-x86_64"] = entry
+          if msi_sig:
+              stage_file(msi_sig)
+              sig_text = msi_sig.read_text(encoding="utf-8").strip()
+              platforms["windows-x86_64-msi"] = {
+                  "url": f"{base_url}/{msi_name}",
+                  "signature": sig_text,
+              }
+          if mac_arm_tar and mac_arm_sig:
+              tar_name = stage_file(mac_arm_tar, f"Rongyok.Desk_{conf_version}_aarch64.app.tar.gz")
+              stage_file(mac_arm_sig, f"{tar_name}.sig")
+              platforms["darwin-aarch64"] = {
+                  "url": f"{base_url}/{tar_name}",
+                  "signature": mac_arm_sig.read_text(encoding="utf-8").strip(),
+              }
+          if mac_x64_tar and mac_x64_sig:
+              tar_name = stage_file(mac_x64_tar, f"Rongyok.Desk_{conf_version}_x64.app.tar.gz")
+              stage_file(mac_x64_sig, f"{tar_name}.sig")
+              platforms["darwin-x86_64"] = {
+                  "url": f"{base_url}/{tar_name}",
+                  "signature": mac_x64_sig.read_text(encoding="utf-8").strip(),
+              }
+
+          manifest = {
+              "version": conf_version,
+              "notes": f"Rongyok Desk {tag} (Windows, macOS, Linux Flatpak).",
+              "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "platforms": platforms,
+              "downloads": {
+                  "windows-x86_64-nsis": f"{base_url}/{exe_name}",
+                  "windows-x86_64-msi": f"{base_url}/{msi_name}",
+                  "darwin-aarch64-dmg": f"{base_url}/{mac_arm_name}",
+                  "darwin-x86_64-dmg": f"{base_url}/{mac_x64_name}",
+                  "linux-x86_64-flatpak": f"{base_url}/{flatpak_name}",
+              },
+          }
+          latest_path = stage_dir / "latest.json"
+          latest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+          json.loads(latest_path.read_text(encoding="utf-8"))
+          print("Staged release assets:")
+          for item in sorted(stage_dir.iterdir()):
+              print(f"  - {item.name} ({item.stat().st_size} bytes)")
+          PY
+
+      - name: Create and publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
-          APP: ${{ steps.app.outputs.path }}
         run: |
           set -euo pipefail
-          for attempt in $(seq 1 60); do
-            if gh release view "$TAG" >/dev/null 2>&1; then
-              echo "Release $TAG is ready."
-              gh release upload "$TAG" "$APP"/dist/flatpak/*.flatpak --clobber
-              exit 0
-            fi
-            echo "Waiting for release $TAG (attempt $attempt of 60)…"
-            sleep 10
-          done
-          echo "No release $TAG appeared; the bundle is still on this run as a build artifact."
-          exit 0
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist-release/* --clobber
+            gh release edit "$TAG" --draft=false --latest --title "Rongyok Desk $TAG"
+          else
+            gh release create "$TAG" dist-release/* \
+              --title "Rongyok Desk $TAG" \
+              --generate-notes \
+              --latest
+          fi

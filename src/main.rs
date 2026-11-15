@@ -6,17 +6,39 @@
 // leave the site open in the person's normal browser instead, and the usual
 // browser keys (Back, Forward, Reload) keep working.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::utils::config::BackgroundThrottlingPolicy;
+use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
+/// Authoritative app identity and version metadata compiled from Cargo.
+const APP_NAME: &str = "Rongyok Desk";
+const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+const APP_COPYRIGHT_JS: &str = r"Copyright \u00a9 2026 Rongyok";
+const APP_DESCRIPTION: &str = "A dedicated single-site desktop browser for rongyok.com.";
 /// The site this window is locked to.
 const START_URL: &str = "https://rongyok.com/";
 /// The session/cookies live beside this, so signing in survives a restart.
 const WINDOW_LABEL: &str = "main";
+/// Marker file beside window-placement.txt tracking first-launch onboarding dismissal.
+const ONBOARDING_STATE_FILE: &str = "onboarding-seen.txt";
+/// Custom-scheme navigation intercepted by Rust to persist onboarding dismissal immediately.
+const ONBOARDING_DISMISS_SCHEME: &str = "rongyok-desk";
+const ONBOARDING_DISMISS_HOST: &str = "onboarding-dismissed";
+
+/// Build the diagnostic version string copied from the About dialog.
+fn version_info_string() -> String {
+    format!(
+        "{APP_NAME} v{APP_VERSION} ({}/{})",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    )
+}
 
 /// True when a URL belongs to the site we host: rongyok.com or any subdomain of it.
 fn is_internal(url: &Url) -> bool {
@@ -143,6 +165,71 @@ fn save_placement(handle: &AppHandle, placement: &WindowPlacement) {
         let _ = std::fs::create_dir_all(parent);
     }
     let _ = std::fs::write(path, format_placement(placement));
+}
+
+/// Interpret the contents of the onboarding marker file.
+fn parse_onboarding_seen(text: &str) -> bool {
+    matches!(
+        text.trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "seen" | "yes"
+    )
+}
+
+fn read_onboarding_seen(path: &Path) -> bool {
+    std::fs::read_to_string(path)
+        .map(|text| parse_onboarding_seen(&text))
+        .unwrap_or(false)
+}
+
+fn write_onboarding_seen(path: &Path) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, "1\n")
+}
+
+/// Where the first-launch onboarding state lives, beside `window-placement.txt`.
+fn onboarding_file(handle: &AppHandle) -> Option<PathBuf> {
+    handle
+        .path()
+        .app_local_data_dir()
+        .ok()
+        .map(|folder| folder.join(ONBOARDING_STATE_FILE))
+}
+
+fn has_seen_onboarding(handle: &AppHandle) -> bool {
+    onboarding_file(handle)
+        .as_deref()
+        .map(read_onboarding_seen)
+        .unwrap_or(false)
+}
+
+fn mark_onboarding_seen(handle: &AppHandle) {
+    if let Some(path) = onboarding_file(handle) {
+        let _ = write_onboarding_seen(&path);
+    }
+}
+
+/// First-launch onboarding only auto-opens in normal interactive launches.
+fn should_show_onboarding(taking_picture: bool, seen: bool) -> bool {
+    !taking_picture && !seen
+}
+
+/// Sentinel URL sent by the Shadow DOM modal when the user dismisses first-launch onboarding.
+fn is_onboarding_dismiss_url(url: &Url) -> bool {
+    url.scheme() == ONBOARDING_DISMISS_SCHEME && url.host_str() == Some(ONBOARDING_DISMISS_HOST)
+}
+
+/// Auto-open onboarding only after an internal HTTP/HTTPS page finishes loading.
+fn should_auto_open_on_page_load(
+    event: PageLoadEvent,
+    url: &Url,
+    onboarding_pending: bool,
+) -> bool {
+    onboarding_pending
+        && matches!(event, PageLoadEvent::Finished)
+        && matches!(url.scheme(), "http" | "https")
+        && is_internal(url)
 }
 
 /// True when this point still falls on a screen that is plugged in now, so a
@@ -350,30 +437,1046 @@ fn watch_video_fullscreen(window: &WebviewWindow) {
 #[cfg(not(target_os = "windows"))]
 fn watch_video_fullscreen(_window: &WebviewWindow) {}
 
-/// The keys a browser window keeps working, whatever the page does with them.
-/// This runs inside the page, before the site's own scripts, and only steps in for
-/// the combinations a desktop app should own.
+/// The keys and shortcuts dialog a browser window keeps working, whatever the
+/// page does with them. Runs before site scripts, isolates its modal inside a
+/// closed Shadow DOM, and notifies Rust over `rongyok-desk://onboarding-dismissed`
+/// when first-launch onboarding is dismissed.
 const SHORTCUT_SCRIPT: &str = r#"
 (function () {
   if (window.__rongyokKeys) return;
   window.__rongyokKeys = true;
+
+  var DISMISS_URL = 'rongyok-desk://onboarding-dismissed';
+  var HOST_ID = 'rongyok-desk-shortcuts-host';
+  var modalOpen = false;
+  var onboardingActive = false;
+  var lastFocused = null;
+  var ui = null;
+
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+
+  function createSvgIcon(paths, size) {
+    var svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', String(size));
+    svg.setAttribute('height', String(size));
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '1.85');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.setAttribute('aria-hidden', 'true');
+    for (var i = 0; i < paths.length; i++) {
+      var el = document.createElementNS(SVG_NS, paths[i][0]);
+      var attrs = paths[i][1];
+      for (var k in attrs) {
+        if (Object.prototype.hasOwnProperty.call(attrs, k)) {
+          el.setAttribute(k, attrs[k]);
+        }
+      }
+      svg.appendChild(el);
+    }
+    return svg;
+  }
+
+  function buildKeyCombo(parts) {
+    var wrap = document.createElement('span');
+    wrap.className = 'keys';
+    for (var i = 0; i < parts.length; i++) {
+      var part = parts[i];
+      if (part.type === 'kbd') {
+        var kbd = document.createElement('kbd');
+        kbd.textContent = part.text;
+        wrap.appendChild(kbd);
+      } else if (part.type === 'sep') {
+        var sep = document.createElement('span');
+        sep.className = 'sep';
+        sep.textContent = part.text;
+        wrap.appendChild(sep);
+      } else {
+        var muted = document.createElement('span');
+        muted.className = 'menu-only';
+        muted.textContent = part.text;
+        wrap.appendChild(muted);
+      }
+    }
+    return wrap;
+  }
+
+  function ensureUi() {
+    if (ui) {
+      var rootTarget = document.documentElement || document.body;
+      if (rootTarget && !ui.host.isConnected) {
+        rootTarget.appendChild(ui.host);
+      }
+      return ui;
+    }
+
+    var rootTarget = document.documentElement || document.body;
+    if (!rootTarget) return null;
+
+    var host = document.createElement('div');
+    host.id = HOST_ID;
+
+    var shadow = host.attachShadow({ mode: 'closed' });
+
+    var style = document.createElement('style');
+    style.textContent = [
+      ':host {',
+      '  all: initial !important;',
+      '  position: fixed !important;',
+      '  inset: 0 !important;',
+      '  width: 100vw !important;',
+      '  height: 100vh !important;',
+      '  margin: 0 !important;',
+      '  padding: 0 !important;',
+      '  border: 0 !important;',
+      '  background: transparent !important;',
+      '  z-index: 2147483647 !important;',
+      '  isolation: isolate !important;',
+      '  display: none !important;',
+      '  pointer-events: none !important;',
+      '  font-family: "Segoe UI", system-ui, -apple-system, sans-serif !important;',
+      '  color: #f5f2fa !important;',
+      '}',
+      ':host([data-rongyok-open="true"]) {',
+      '  display: block !important;',
+      '  pointer-events: auto !important;',
+      '}',
+      '*, *::before, *::after { box-sizing: border-box; }',
+      'svg { pointer-events: none; }',
+      '.backdrop {',
+      '  position: fixed; inset: 0;',
+      '  display: flex; align-items: center; justify-content: center;',
+      '  padding: 12px;',
+      '  background: rgba(12, 9, 18, 0.78);',
+      '  backdrop-filter: blur(6px);',
+      '  -webkit-backdrop-filter: blur(6px);',
+      '}',
+      '.dialog {',
+      '  width: min(620px, calc(100vw - 24px));',
+      '  max-height: calc(100vh - 24px);',
+      '  overflow-y: auto;',
+      '  border-radius: 16px;',
+      '  background: linear-gradient(180deg, #1b1526 0%, #120e18 100%);',
+      '  border: 1px solid rgba(228, 182, 94, 0.36);',
+      '  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.68), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;',
+      '  color: #f5f2fa;',
+      '  padding: 16px 18px;',
+      '}',
+      '.header {',
+      '  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;',
+      '  margin-bottom: 14px;',
+      '}',
+      '.title-wrap { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }',
+      '.icon-badge {',
+      '  flex: 0 0 auto;',
+      '  width: 36px; height: 36px;',
+      '  border-radius: 10px;',
+      '  display: inline-flex; align-items: center; justify-content: center;',
+      '  background: rgba(228, 182, 94, 0.14);',
+      '  border: 1px solid rgba(228, 182, 94, 0.38);',
+      '  color: #e4b65e;',
+      '}',
+      '.eyebrow {',
+      '  margin: 0 0 2px;',
+      '  font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;',
+      '  color: #e4b65e;',
+      '}',
+      'h2 {',
+      '  margin: 0;',
+      '  font-size: 18px; font-weight: 700; line-height: 1.25; color: #f5f2fa;',
+      '}',
+      '.subtitle {',
+      '  margin: 3px 0 0;',
+      '  font-size: 12.5px; line-height: 1.4; color: #cfc6de;',
+      '}',
+      '.close-btn {',
+      '  flex: 0 0 auto;',
+      '  width: 32px; height: 32px;',
+      '  border-radius: 8px;',
+      '  border: 1px solid rgba(255, 255, 255, 0.12);',
+      '  background: rgba(255, 255, 255, 0.04);',
+      '  color: #cfc6de;',
+      '  display: inline-flex; align-items: center; justify-content: center;',
+      '  cursor: pointer;',
+      '  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;',
+      '}',
+      '.close-btn:hover { background: rgba(228, 182, 94, 0.14); border-color: rgba(228, 182, 94, 0.4); color: #f5f2fa; }',
+      '.close-btn:focus-visible, .primary-btn:focus-visible {',
+      '  outline: 2px solid #f0c674; outline-offset: 2px;',
+      '}',
+      '.table-wrap {',
+      '  border-radius: 12px;',
+      '  border: 1px solid rgba(255, 255, 255, 0.1);',
+      '  background: rgba(18, 14, 24, 0.72);',
+      '  overflow-x: auto;',
+      '  overflow-y: hidden;',
+      '}',
+      'table { width: 100%; border-collapse: collapse; font-size: 12.5px; }',
+      'thead th {',
+      '  text-align: left;',
+      '  font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;',
+      '  color: #b7aec7;',
+      '  padding: 9px 12px;',
+      '  background: rgba(255, 255, 255, 0.03);',
+      '  border-bottom: 1px solid rgba(255, 255, 255, 0.1);',
+      '}',
+      'tbody td {',
+      '  padding: 8px 12px;',
+      '  border-bottom: 1px solid rgba(255, 255, 255, 0.07);',
+      '  vertical-align: middle;',
+      '}',
+      'tbody tr:last-child td { border-bottom: 0; }',
+      'tbody tr:hover td { background: rgba(228, 182, 94, 0.05); }',
+      '.action-cell { font-weight: 600; color: #f5f2fa; }',
+      '.detail-cell { color: #cfc6de; font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }',
+      '.keys { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: 3px; white-space: nowrap; }',
+      'kbd {',
+      '  display: inline-block;',
+      '  padding: 2px 6px;',
+      '  border-radius: 6px;',
+      '  background: #120e18;',
+      '  border: 1px solid rgba(228, 182, 94, 0.42);',
+      '  box-shadow: 0 1px 0 rgba(228, 182, 94, 0.22);',
+      '  color: #f0c674;',
+      '  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;',
+      '  font-size: 11px; font-weight: 600; line-height: 1.35;',
+      '}',
+      '.sep { color: #9c92ad; font-size: 11px; }',
+      '.menu-only {',
+      '  display: inline-block;',
+      '  padding: 2px 7px;',
+      '  border-radius: 6px;',
+      '  background: rgba(255, 255, 255, 0.05);',
+      '  border: 1px solid rgba(255, 255, 255, 0.14);',
+      '  color: #cfc6de;',
+      '  font-size: 11px; font-weight: 500;',
+      '}',
+      '.footer {',
+      '  display: flex; align-items: center; justify-content: space-between; gap: 12px;',
+      '  margin-top: 14px; flex-wrap: wrap;',
+      '}',
+      '.hint {',
+      '  margin: 0;',
+      '  font-size: 11.5px; line-height: 1.45; color: #b7aec7;',
+      '}',
+      '.hint strong { color: #f0c674; font-weight: 600; }',
+      '.primary-btn {',
+      '  padding: 8px 18px;',
+      '  border-radius: 9px;',
+      '  border: 1px solid #f0c674;',
+      '  background: #e4b65e;',
+      '  color: #120e18;',
+      '  font-size: 13px; font-weight: 700;',
+      '  cursor: pointer;',
+      '  transition: background 140ms ease, transform 100ms ease;',
+      '}',
+      '.primary-btn:hover { background: #f0c674; }',
+      '.primary-btn:active { transform: translateY(1px); }',
+      '@media (max-width: 540px) {',
+      '  .dialog { padding: 14px 14px 14px; }',
+      '  h2 { font-size: 17px; }',
+      '  .subtitle { font-size: 12px; }',
+      '  .table-wrap { overflow-x: visible; }',
+      '  thead { display: none; }',
+      '  table, tbody { display: block; width: 100%; }',
+      '  tbody tr {',
+      '    display: grid;',
+      '    grid-template-columns: minmax(0, 1fr) auto;',
+      '    grid-template-areas: "action keys" "detail detail";',
+      '    gap: 4px 10px;',
+      '    padding: 9px 12px;',
+      '    border-bottom: 1px solid rgba(255, 255, 255, 0.07);',
+      '  }',
+      '  tbody tr:last-child { border-bottom: 0; }',
+      '  tbody tr:hover { background: rgba(228, 182, 94, 0.05); }',
+      '  tbody tr:hover td { background: transparent; }',
+      '  tbody td { display: block; padding: 0; border-bottom: 0; }',
+      '  td.action-cell { grid-area: action; align-self: center; font-size: 12.5px; line-height: 1.3; }',
+      '  td.keys-cell { grid-area: keys; align-self: center; justify-self: end; text-align: right; }',
+      '  td.keys-cell .keys { flex-wrap: wrap; justify-content: flex-end; white-space: normal; }',
+      '  td.detail-cell { grid-area: detail; font-size: 11.5px; line-height: 1.35; color: #b7aec7; }',
+      '}'
+    ].join('\n');
+
+    var backdrop = document.createElement('div');
+    backdrop.className = 'backdrop';
+
+    var dialog = document.createElement('div');
+    dialog.className = 'dialog';
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    dialog.setAttribute('aria-labelledby', 'rongyok-shortcuts-title');
+
+    var header = document.createElement('div');
+    header.className = 'header';
+
+    var titleWrap = document.createElement('div');
+    titleWrap.className = 'title-wrap';
+
+    var iconBadge = document.createElement('span');
+    iconBadge.className = 'icon-badge';
+    iconBadge.appendChild(createSvgIcon([
+      ['rect', { x: '2', y: '5', width: '20', height: '14', rx: '2.5' }],
+      ['path', { d: 'M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M9 14h6' }]
+    ], 20));
+
+    var textBlock = document.createElement('div');
+    var eyebrow = document.createElement('p');
+    eyebrow.className = 'eyebrow';
+    eyebrow.textContent = 'Reference';
+
+    var title = document.createElement('h2');
+    title.id = 'rongyok-shortcuts-title';
+    title.textContent = 'Keyboard Shortcuts';
+
+    var subtitle = document.createElement('p');
+    subtitle.className = 'subtitle';
+    subtitle.textContent = 'Quick navigation and window controls for Rongyok Desk.';
+
+    textBlock.appendChild(eyebrow);
+    textBlock.appendChild(title);
+    textBlock.appendChild(subtitle);
+
+    titleWrap.appendChild(iconBadge);
+    titleWrap.appendChild(textBlock);
+
+    var closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'close-btn';
+    closeBtn.setAttribute('aria-label', 'Close');
+    closeBtn.appendChild(createSvgIcon([
+      ['path', { d: 'M18 6L6 18M6 6l12 12' }]
+    ], 16));
+
+    header.appendChild(titleWrap);
+    header.appendChild(closeBtn);
+
+    var tableWrap = document.createElement('div');
+    tableWrap.className = 'table-wrap';
+
+    var table = document.createElement('table');
+    var thead = document.createElement('thead');
+    var headRow = document.createElement('tr');
+    var cols = ['Action', 'Shortcut', 'Details'];
+    for (var c = 0; c < cols.length; c++) {
+      var th = document.createElement('th');
+      th.scope = 'col';
+      th.textContent = cols[c];
+      headRow.appendChild(th);
+    }
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    var rows = [
+      {
+        action: 'Back',
+        keys: [{ type: 'kbd', text: 'Alt' }, { type: 'sep', text: '+' }, { type: 'kbd', text: 'Left' }],
+        detail: 'Also in Navigate menu'
+      },
+      {
+        action: 'Forward',
+        keys: [{ type: 'kbd', text: 'Alt' }, { type: 'sep', text: '+' }, { type: 'kbd', text: 'Right' }],
+        detail: 'Also in Navigate menu'
+      },
+      {
+        action: 'Reload',
+        keys: [
+          { type: 'kbd', text: 'F5' },
+          { type: 'sep', text: '/' },
+          { type: 'kbd', text: 'Ctrl+R' },
+          { type: 'sep', text: '/' },
+          { type: 'kbd', text: 'Cmd+R' }
+        ],
+        detail: 'Reloads page'
+      },
+      {
+        action: 'Go to rongyok.com',
+        keys: [{ type: 'kbd', text: 'Ctrl' }, { type: 'sep', text: '+' }, { type: 'kbd', text: 'H' }],
+        detail: 'Opens https://rongyok.com/'
+      },
+      {
+        action: 'Full screen',
+        keys: [{ type: 'kbd', text: 'F11' }],
+        detail: 'Toggles fullscreen'
+      },
+      {
+        action: 'Open this page in browser',
+        keys: [{ type: 'menu', text: 'Menu only' }],
+        detail: 'Opens current page in system browser'
+      },
+      {
+        action: 'Quit',
+        keys: [{ type: 'kbd', text: 'Ctrl' }, { type: 'sep', text: '+' }, { type: 'kbd', text: 'Q' }],
+        detail: 'Closes app'
+      }
+    ];
+
+    for (var r = 0; r < rows.length; r++) {
+      var tr = document.createElement('tr');
+      var tdAction = document.createElement('td');
+      tdAction.className = 'action-cell';
+      tdAction.textContent = rows[r].action;
+
+      var tdKeys = document.createElement('td');
+      tdKeys.className = 'keys-cell';
+      tdKeys.appendChild(buildKeyCombo(rows[r].keys));
+
+      var tdDetail = document.createElement('td');
+      tdDetail.className = 'detail-cell';
+      tdDetail.textContent = rows[r].detail;
+
+      tr.appendChild(tdAction);
+      tr.appendChild(tdKeys);
+      tr.appendChild(tdDetail);
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    tableWrap.appendChild(table);
+
+    var footer = document.createElement('div');
+    footer.className = 'footer';
+
+    var hint = document.createElement('p');
+    hint.className = 'hint';
+    hint.appendChild(document.createTextNode('Open anytime via '));
+    var helpStrong = document.createElement('strong');
+    helpStrong.textContent = 'Help > Keyboard Shortcuts';
+    hint.appendChild(helpStrong);
+    hint.appendChild(document.createTextNode(' (F1 or Ctrl+/). Press Esc to close.'));
+
+    var primaryBtn = document.createElement('button');
+    primaryBtn.type = 'button';
+    primaryBtn.className = 'primary-btn';
+    primaryBtn.textContent = 'Got it';
+
+    footer.appendChild(hint);
+    footer.appendChild(primaryBtn);
+
+    dialog.appendChild(header);
+    dialog.appendChild(tableWrap);
+    dialog.appendChild(footer);
+    backdrop.appendChild(dialog);
+
+    shadow.appendChild(style);
+    shadow.appendChild(backdrop);
+    rootTarget.appendChild(host);
+
+    backdrop.addEventListener('click', function (event) {
+      if (event.target === backdrop) {
+        closeModal();
+      }
+    });
+    closeBtn.addEventListener('click', closeModal);
+    primaryBtn.addEventListener('click', closeModal);
+
+    ui = {
+      host: host,
+      eyebrow: eyebrow,
+      title: title,
+      primaryBtn: primaryBtn
+    };
+    return ui;
+  }
+
+  function isModalOpen() {
+    return modalOpen;
+  }
+
+  function openModal(isOnboarding) {
+    if (window.__rongyokCloseAbout) {
+      try { window.__rongyokCloseAbout(); } catch (_) {}
+    }
+    if (isOnboarding) {
+      onboardingActive = true;
+    }
+    var parts = ensureUi();
+    if (!parts) {
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function () {
+          openModal(isOnboarding);
+        }, { once: true });
+      }
+      return;
+    }
+
+    if (onboardingActive) {
+      parts.eyebrow.textContent = 'Welcome to Rongyok Desk';
+      parts.title.textContent = 'Keyboard Shortcuts';
+    } else {
+      parts.eyebrow.textContent = 'Help Reference';
+      parts.title.textContent = 'Keyboard Shortcuts';
+    }
+
+    if (!modalOpen) {
+      lastFocused = document.activeElement;
+      modalOpen = true;
+      parts.host.setAttribute('data-rongyok-open', 'true');
+      requestAnimationFrame(function () {
+        try { parts.primaryBtn.focus(); } catch (_) {}
+      });
+    }
+  }
+
+  function closeModal() {
+    if (!modalOpen) return;
+    modalOpen = false;
+    if (ui) {
+      ui.host.removeAttribute('data-rongyok-open');
+    }
+    if (lastFocused && lastFocused.isConnected && typeof lastFocused.focus === 'function') {
+      try { lastFocused.focus(); } catch (_) {}
+    }
+    lastFocused = null;
+
+    if (onboardingActive) {
+      onboardingActive = false;
+      window.location.href = DISMISS_URL;
+    }
+  }
+
+  window.__rongyokShowShortcuts = openModal;
+  window.__rongyokCloseShortcuts = closeModal;
+
   window.addEventListener('keydown', function (event) {
     var key = (event.key || '').toLowerCase();
     var alt = event.altKey;
     var ctrl = event.ctrlKey || event.metaKey;
+
+    if (key === 'escape' && isModalOpen()) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      closeModal();
+      return;
+    }
+    if (!alt && !ctrl && !event.shiftKey && key === 'f1') {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      openModal(false);
+      return;
+    }
+    if (!alt && ctrl && !event.shiftKey && (key === '/' || event.code === 'Slash')) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      if (isModalOpen()) {
+        closeModal();
+      } else {
+        openModal(false);
+      }
+      return;
+    }
     if (alt && !ctrl && (key === 'arrowleft' || key === 'left')) {
       event.preventDefault();
       history.back();
     } else if (alt && !ctrl && (key === 'arrowright' || key === 'right')) {
       event.preventDefault();
       history.forward();
-    } else if (!alt && !ctrl && (key === 'f5' || (ctrl && key === 'r'))) {
+    } else if ((!alt && !ctrl && key === 'f5') || (!alt && ctrl && key === 'r')) {
       event.preventDefault();
       location.reload();
     }
   }, true);
 })();
 "#;
+
+/// Escape a string for safe inclusion inside a single-quoted JavaScript literal.
+fn escape_js_single_quoted(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('\'', "\\'")
+        .replace('\r', "\\r")
+        .replace('\n', "\\n")
+}
+
+/// Initialization script for the isolated Shadow DOM "About Rongyok Desk" modal.
+/// Interpolates authoritative compile-time metadata from Cargo so no stale copy exists.
+fn about_script() -> String {
+    let app_name = escape_js_single_quoted(APP_NAME);
+    let version_badge = escape_js_single_quoted(&format!("v{APP_VERSION}"));
+    let platform = escape_js_single_quoted(&format!(
+        "{} / {}",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    ));
+    let version_info = escape_js_single_quoted(&version_info_string());
+    let description = escape_js_single_quoted(APP_DESCRIPTION);
+    let site_url = escape_js_single_quoted(START_URL);
+
+    let template = r#"
+(function () {
+  if (window.__rongyokAboutInit) return;
+  window.__rongyokAboutInit = true;
+
+  var APP_NAME = '__APP_NAME__';
+  var VERSION_BADGE = '__VERSION_BADGE__';
+  var PLATFORM = '__PLATFORM__';
+  var VERSION_INFO = '__VERSION_INFO__';
+  var DESCRIPTION = '__DESCRIPTION__';
+  var SITE_URL = '__SITE_URL__';
+  var COPYRIGHT = '__COPYRIGHT__';
+  var HOST_ID = 'rongyok-desk-about-host';
+
+  var modalOpen = false;
+  var lastFocused = null;
+  var copyResetTimer = null;
+  var ui = null;
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+
+  function createSvgIcon(paths, size) {
+    var svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', String(size));
+    svg.setAttribute('height', String(size));
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '1.85');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.setAttribute('aria-hidden', 'true');
+    for (var i = 0; i < paths.length; i++) {
+      var el = document.createElementNS(SVG_NS, paths[i][0]);
+      var attrs = paths[i][1];
+      for (var k in attrs) {
+        if (Object.prototype.hasOwnProperty.call(attrs, k)) {
+          el.setAttribute(k, attrs[k]);
+        }
+      }
+      svg.appendChild(el);
+    }
+    return svg;
+  }
+
+  function addMetaRow(tbody, label, valueNode) {
+    var tr = document.createElement('tr');
+    var th = document.createElement('th');
+    th.scope = 'row';
+    th.textContent = label;
+    var td = document.createElement('td');
+    td.appendChild(valueNode);
+    tr.appendChild(th);
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+  }
+
+  function ensureUi() {
+    if (ui) {
+      var rootTarget = document.documentElement || document.body;
+      if (rootTarget && !ui.host.isConnected) {
+        rootTarget.appendChild(ui.host);
+      }
+      return ui;
+    }
+
+    var rootTarget = document.documentElement || document.body;
+    if (!rootTarget) return null;
+
+    var host = document.createElement('div');
+    host.id = HOST_ID;
+
+    var shadow = host.attachShadow({ mode: 'closed' });
+
+    var style = document.createElement('style');
+    style.textContent = [
+      ':host {',
+      '  all: initial !important;',
+      '  position: fixed !important;',
+      '  inset: 0 !important;',
+      '  width: 100vw !important;',
+      '  height: 100vh !important;',
+      '  margin: 0 !important;',
+      '  padding: 0 !important;',
+      '  border: 0 !important;',
+      '  background: transparent !important;',
+      '  z-index: 2147483647 !important;',
+      '  isolation: isolate !important;',
+      '  display: none !important;',
+      '  pointer-events: none !important;',
+      '  font-family: "Segoe UI", system-ui, -apple-system, sans-serif !important;',
+      '  color: #f5f2fa !important;',
+      '}',
+      ':host([data-rongyok-open="true"]) {',
+      '  display: block !important;',
+      '  pointer-events: auto !important;',
+      '}',
+      '*, *::before, *::after { box-sizing: border-box; }',
+      'svg { pointer-events: none; }',
+      '.backdrop {',
+      '  position: fixed; inset: 0;',
+      '  display: flex; align-items: center; justify-content: center;',
+      '  padding: 12px;',
+      '  background: rgba(12, 9, 18, 0.78);',
+      '  backdrop-filter: blur(6px);',
+      '  -webkit-backdrop-filter: blur(6px);',
+      '}',
+      '.dialog {',
+      '  width: min(460px, calc(100vw - 24px));',
+      '  max-height: calc(100vh - 24px);',
+      '  overflow-y: auto;',
+      '  border-radius: 16px;',
+      '  background: linear-gradient(180deg, #1b1526 0%, #120e18 100%);',
+      '  border: 1px solid rgba(228, 182, 94, 0.36);',
+      '  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.68), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;',
+      '  color: #f5f2fa;',
+      '  padding: 18px 20px;',
+      '}',
+      '.header {',
+      '  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;',
+      '  margin-bottom: 12px;',
+      '}',
+      '.title-wrap { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }',
+      '.icon-badge {',
+      '  flex: 0 0 auto;',
+      '  width: 38px; height: 38px;',
+      '  border-radius: 10px;',
+      '  display: inline-flex; align-items: center; justify-content: center;',
+      '  background: rgba(228, 182, 94, 0.14);',
+      '  border: 1px solid rgba(228, 182, 94, 0.38);',
+      '  color: #e4b65e;',
+      '}',
+      '.eyebrow {',
+      '  margin: 0 0 2px;',
+      '  font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;',
+      '  color: #e4b65e;',
+      '}',
+      'h2 {',
+      '  margin: 0;',
+      '  font-size: 18px; font-weight: 700; line-height: 1.25; color: #f5f2fa;',
+      '}',
+      '.version-pill {',
+      '  display: inline-block; margin-left: 8px; padding: 2px 8px;',
+      '  border-radius: 999px; vertical-align: middle;',
+      '  background: rgba(228, 182, 94, 0.14);',
+      '  border: 1px solid rgba(228, 182, 94, 0.4);',
+      '  color: #f0c674;',
+      '  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;',
+      '  font-size: 11.5px; font-weight: 600;',
+      '}',
+      '.desc {',
+      '  margin: 0 0 14px;',
+      '  font-size: 13px; line-height: 1.5; color: #cfc6de;',
+      '}',
+      '.close-btn {',
+      '  flex: 0 0 auto;',
+      '  width: 32px; height: 32px;',
+      '  border-radius: 8px;',
+      '  border: 1px solid rgba(255, 255, 255, 0.12);',
+      '  background: rgba(255, 255, 255, 0.04);',
+      '  color: #cfc6de;',
+      '  display: inline-flex; align-items: center; justify-content: center;',
+      '  cursor: pointer;',
+      '  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;',
+      '}',
+      '.close-btn:hover { background: rgba(228, 182, 94, 0.14); border-color: rgba(228, 182, 94, 0.4); color: #f5f2fa; }',
+      '.close-btn:focus-visible, .secondary-btn:focus-visible, .primary-btn:focus-visible, .site-link:focus-visible {',
+      '  outline: 2px solid #f0c674; outline-offset: 2px;',
+      '}',
+      '.meta-wrap {',
+      '  border-radius: 12px;',
+      '  border: 1px solid rgba(255, 255, 255, 0.1);',
+      '  background: rgba(18, 14, 24, 0.72);',
+      '  overflow: hidden;',
+      '}',
+      'table { width: 100%; border-collapse: collapse; font-size: 12.5px; }',
+      'th {',
+      '  width: 118px; text-align: left; font-weight: 600; color: #b7aec7;',
+      '  padding: 9px 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.07);',
+      '  vertical-align: middle;',
+      '}',
+      'td {',
+      '  padding: 9px 12px; color: #f5f2fa;',
+      '  border-bottom: 1px solid rgba(255, 255, 255, 0.07);',
+      '  vertical-align: middle; overflow-wrap: anywhere;',
+      '}',
+      'tr:last-child th, tr:last-child td { border-bottom: 0; }',
+      '.mono {',
+      '  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;',
+      '  font-size: 12px; color: #f0c674;',
+      '}',
+      '.site-link { color: #f0c674; text-decoration: none; font-weight: 600; }',
+      '.site-link:hover { text-decoration: underline; }',
+      '.footer {',
+      '  display: flex; align-items: center; justify-content: space-between; gap: 10px;',
+      '  margin-top: 16px; flex-wrap: wrap;',
+      '}',
+      '.secondary-btn {',
+      '  display: inline-flex; align-items: center; gap: 6px;',
+      '  padding: 8px 13px;',
+      '  border-radius: 9px;',
+      '  border: 1px solid rgba(228, 182, 94, 0.36);',
+      '  background: rgba(228, 182, 94, 0.1);',
+      '  color: #f0c674;',
+      '  font-size: 12.5px; font-weight: 600;',
+      '  cursor: pointer;',
+      '  transition: background 140ms ease, border-color 140ms ease;',
+      '}',
+      '.secondary-btn:hover { background: rgba(228, 182, 94, 0.18); border-color: rgba(228, 182, 94, 0.55); }',
+      '.secondary-btn[data-copied="true"] {',
+      '  background: rgba(228, 182, 94, 0.24); border-color: #f0c674; color: #f5f2fa;',
+      '}',
+      '.primary-btn {',
+      '  padding: 8px 18px;',
+      '  border-radius: 9px;',
+      '  border: 1px solid #f0c674;',
+      '  background: #e4b65e;',
+      '  color: #120e18;',
+      '  font-size: 13px; font-weight: 700;',
+      '  cursor: pointer;',
+      '  transition: background 140ms ease, transform 100ms ease;',
+      '}',
+      '.primary-btn:hover { background: #f0c674; }',
+      '.primary-btn:active { transform: translateY(1px); }',
+      '@media (max-width: 440px) {',
+      '  .dialog { padding: 15px 14px; }',
+      '  th { width: 92px; padding: 8px 10px; font-size: 12px; }',
+      '  td { padding: 8px 10px; font-size: 12px; }',
+      '  .footer { flex-direction: column; align-items: stretch; }',
+      '  .secondary-btn, .primary-btn { justify-content: center; width: 100%; }',
+      '}'
+    ].join('\n');
+
+    var backdrop = document.createElement('div');
+    backdrop.className = 'backdrop';
+
+    var dialog = document.createElement('div');
+    dialog.className = 'dialog';
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    dialog.setAttribute('aria-labelledby', 'rongyok-about-title');
+
+    var header = document.createElement('div');
+    header.className = 'header';
+
+    var titleWrap = document.createElement('div');
+    titleWrap.className = 'title-wrap';
+
+    var iconBadge = document.createElement('span');
+    iconBadge.className = 'icon-badge';
+    iconBadge.appendChild(createSvgIcon([
+      ['circle', { cx: '12', cy: '12', r: '9' }],
+      ['path', { d: 'M12 16v-4M12 8h.01' }]
+    ], 20));
+
+    var textBlock = document.createElement('div');
+    var eyebrow = document.createElement('p');
+    eyebrow.className = 'eyebrow';
+    eyebrow.textContent = 'About';
+
+    var title = document.createElement('h2');
+    title.id = 'rongyok-about-title';
+    title.appendChild(document.createTextNode(APP_NAME));
+    var versionPill = document.createElement('span');
+    versionPill.className = 'version-pill';
+    versionPill.textContent = VERSION_BADGE;
+    title.appendChild(versionPill);
+
+    textBlock.appendChild(eyebrow);
+    textBlock.appendChild(title);
+    titleWrap.appendChild(iconBadge);
+    titleWrap.appendChild(textBlock);
+
+    var closeXBtn = document.createElement('button');
+    closeXBtn.type = 'button';
+    closeXBtn.className = 'close-btn';
+    closeXBtn.setAttribute('aria-label', 'Close');
+    closeXBtn.appendChild(createSvgIcon([
+      ['path', { d: 'M18 6L6 18M6 6l12 12' }]
+    ], 16));
+
+    header.appendChild(titleWrap);
+    header.appendChild(closeXBtn);
+
+    var desc = document.createElement('p');
+    desc.className = 'desc';
+    desc.textContent = DESCRIPTION;
+
+    var metaWrap = document.createElement('div');
+    metaWrap.className = 'meta-wrap';
+    var table = document.createElement('table');
+    var tbody = document.createElement('tbody');
+
+    var verSpan = document.createElement('span');
+    verSpan.className = 'mono';
+    verSpan.textContent = VERSION_BADGE + ' (' + PLATFORM + ')';
+    addMetaRow(tbody, 'Version', verSpan);
+
+    var siteLink = document.createElement('a');
+    siteLink.className = 'site-link';
+    siteLink.href = SITE_URL;
+    siteLink.textContent = SITE_URL;
+    siteLink.addEventListener('click', function () {
+      closeModal();
+    });
+    addMetaRow(tbody, 'Website', siteLink);
+
+    var copyrightNode = document.createTextNode(COPYRIGHT);
+    addMetaRow(tbody, 'Copyright', copyrightNode);
+
+    table.appendChild(tbody);
+    metaWrap.appendChild(table);
+
+    var footer = document.createElement('div');
+    footer.className = 'footer';
+
+    var copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'secondary-btn';
+    var copyIcon = createSvgIcon([
+      ['rect', { x: '9', y: '9', width: '11', height: '11', rx: '2' }],
+      ['path', { d: 'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1' }]
+    ], 14);
+    var copyLabel = document.createElement('span');
+    copyLabel.textContent = 'Copy Version Info';
+    copyBtn.appendChild(copyIcon);
+    copyBtn.appendChild(copyLabel);
+
+    var closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'primary-btn';
+    closeBtn.textContent = 'Close';
+
+    footer.appendChild(copyBtn);
+    footer.appendChild(closeBtn);
+
+    dialog.appendChild(header);
+    dialog.appendChild(desc);
+    dialog.appendChild(metaWrap);
+    dialog.appendChild(footer);
+    backdrop.appendChild(dialog);
+
+    shadow.appendChild(style);
+    shadow.appendChild(backdrop);
+    rootTarget.appendChild(host);
+
+    function showCopiedFeedback() {
+      copyLabel.textContent = 'Copied!';
+      copyBtn.setAttribute('data-copied', 'true');
+      if (copyResetTimer) {
+        clearTimeout(copyResetTimer);
+      }
+      copyResetTimer = setTimeout(function () {
+        copyResetTimer = null;
+        copyLabel.textContent = 'Copy Version Info';
+        copyBtn.removeAttribute('data-copied');
+      }, 2000);
+    }
+
+    function fallbackCopy(text) {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      ta.style.pointerEvents = 'none';
+      shadow.appendChild(ta);
+      ta.select();
+      try {
+        if (document.execCommand('copy')) {
+          showCopiedFeedback();
+        }
+      } catch (_) {}
+      shadow.removeChild(ta);
+      try { copyBtn.focus(); } catch (_) {}
+    }
+
+    copyBtn.addEventListener('click', function () {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(VERSION_INFO).then(showCopiedFeedback, function () {
+          fallbackCopy(VERSION_INFO);
+        });
+      } else {
+        fallbackCopy(VERSION_INFO);
+      }
+    });
+
+    backdrop.addEventListener('click', function (event) {
+      if (event.target === backdrop) {
+        closeModal();
+      }
+    });
+    closeXBtn.addEventListener('click', closeModal);
+    closeBtn.addEventListener('click', closeModal);
+
+    ui = {
+      host: host,
+      closeBtn: closeBtn,
+      copyBtn: copyBtn,
+      copyLabel: copyLabel
+    };
+    return ui;
+  }
+
+  function isModalOpen() {
+    return modalOpen;
+  }
+
+  function openModal() {
+    if (window.__rongyokCloseShortcuts) {
+      try { window.__rongyokCloseShortcuts(); } catch (_) {}
+    }
+    var parts = ensureUi();
+    if (!parts) {
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', openModal, { once: true });
+      }
+      return;
+    }
+    if (!modalOpen) {
+      lastFocused = document.activeElement;
+      modalOpen = true;
+      parts.host.setAttribute('data-rongyok-open', 'true');
+      requestAnimationFrame(function () {
+        try { parts.closeBtn.focus(); } catch (_) {}
+      });
+    }
+  }
+
+  function closeModal() {
+    if (!modalOpen) return;
+    modalOpen = false;
+    if (copyResetTimer) {
+      clearTimeout(copyResetTimer);
+      copyResetTimer = null;
+    }
+    if (ui) {
+      ui.copyLabel.textContent = 'Copy Version Info';
+      ui.copyBtn.removeAttribute('data-copied');
+      ui.host.removeAttribute('data-rongyok-open');
+    }
+    if (lastFocused && lastFocused.isConnected && typeof lastFocused.focus === 'function') {
+      try { lastFocused.focus(); } catch (_) {}
+    }
+    lastFocused = null;
+  }
+
+  window.__rongyokShowAbout = openModal;
+  window.__rongyokCloseAbout = closeModal;
+
+  window.addEventListener('keydown', function (event) {
+    var key = (event.key || '').toLowerCase();
+    if (key === 'escape' && isModalOpen()) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      closeModal();
+    }
+  }, true);
+})();
+"#;
+
+    template
+        .replace("__APP_NAME__", &app_name)
+        .replace("__VERSION_BADGE__", &version_badge)
+        .replace("__PLATFORM__", &platform)
+        .replace("__VERSION_INFO__", &version_info)
+        .replace("__DESCRIPTION__", &description)
+        .replace("__SITE_URL__", &site_url)
+        .replace("__COPYRIGHT__", APP_COPYRIGHT_JS)
+}
 #[cfg(target_os = "windows")]
 unsafe fn read_png_stream(stream: &windows::Win32::System::Com::IStream) -> Option<Vec<u8>> {
     use windows::Win32::System::Com::{STATFLAG_NONAME, STATSTG};
@@ -573,7 +1676,24 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         ],
     )?;
 
-    Menu::with_items(app, &[&navigate])
+    let shortcuts = MenuItem::with_id(
+        app,
+        "shortcuts",
+        "Keyboard Shortcuts",
+        true,
+        Some("F1"),
+    )?;
+    let help_separator = PredefinedMenuItem::separator(app)?;
+    let about = MenuItem::with_id(
+        app,
+        "about",
+        "About Rongyok Desk",
+        true,
+        None::<&str>,
+    )?;
+    let help = Submenu::with_items(app, "Help", true, &[&shortcuts, &help_separator, &about])?;
+
+    Menu::with_items(app, &[&navigate, &help])
 }
 
 fn main() {
@@ -625,12 +1745,26 @@ fn main() {
                         open_in_system_browser(url.as_str());
                     }
                 }
+                "shortcuts" => {
+                    let _ = window.eval(
+                        "window.__rongyokShowShortcuts && window.__rongyokShowShortcuts(false);",
+                    );
+                }
+                "about" => {
+                    let _ = window.eval(
+                        "window.__rongyokShowAbout && window.__rongyokShowAbout();",
+                    );
+                }
                 "quit" => app.exit(0),
                 _ => {}
             }
         })
         .setup(move |app| {
             let handle = app.handle().clone();
+            let onboarding_pending = Arc::new(AtomicBool::new(should_show_onboarding(
+                taking_picture,
+                has_seen_onboarding(&handle),
+            )));
 
             // Keep cookies and site storage in a steady folder, so the person stays
             // signed in between launches.
@@ -661,18 +1795,34 @@ fn main() {
             .devtools(cfg!(debug_assertions))
             // The keys a desktop window keeps working even if the page swallows them.
             .initialization_script(SHORTCUT_SCRIPT)
-            .on_navigation(|url| {
-                if is_internal(url) {
-                    return true;
+            .initialization_script(about_script())
+            .on_navigation({
+                let handle = handle.clone();
+                let onboarding_pending = Arc::clone(&onboarding_pending);
+                move |url| {
+                    if is_onboarding_dismiss_url(url) {
+                        onboarding_pending.store(false, Ordering::SeqCst);
+                        mark_onboarding_seen(&handle);
+                        return false;
+                    }
+                    if is_internal(url) {
+                        return true;
+                    }
+                    // A link leaving the site: hand it to the normal browser, keep this
+                    // window where it is. mailto:, tel: and the like go there too.
+                    open_in_system_browser(url.as_str());
+                    false
                 }
-                // A link leaving the site: hand it to the normal browser, keep this
-                // window where it is. mailto:, tel: and the like go there too.
-                open_in_system_browser(url.as_str());
-                false
             })
             .on_new_window({
                 let handle = handle.clone();
+                let onboarding_pending = Arc::clone(&onboarding_pending);
                 move |url, _features| {
+                    if is_onboarding_dismiss_url(&url) {
+                        onboarding_pending.store(false, Ordering::SeqCst);
+                        mark_onboarding_seen(&handle);
+                        return tauri::webview::NewWindowResponse::Deny;
+                    }
                     if is_internal(&url) {
                         // A same-site pop-up stays in this window rather than opening
                         // a second one.
@@ -683,6 +1833,20 @@ fn main() {
                         open_in_system_browser(url.as_str());
                     }
                     tauri::webview::NewWindowResponse::Deny
+                }
+            })
+            .on_page_load({
+                let onboarding_pending = Arc::clone(&onboarding_pending);
+                move |window, payload| {
+                    if should_auto_open_on_page_load(
+                        payload.event(),
+                        payload.url(),
+                        onboarding_pending.load(Ordering::Acquire),
+                    ) {
+                        let _ = window.eval(
+                            "window.__rongyokShowShortcuts && window.__rongyokShowShortcuts(true);",
+                        );
+                    }
                 }
             });
 
@@ -868,5 +2032,179 @@ mod tests {
         };
         assert!(!silly.is_usable());
         assert_eq!(parse_placement(&format_placement(&silly)), None);
+    }
+
+    #[test]
+    fn onboarding_seen_parser_handles_valid_and_invalid_values() {
+        assert!(parse_onboarding_seen("1"));
+        assert!(parse_onboarding_seen(" 1\n"));
+        assert!(parse_onboarding_seen("true"));
+        assert!(parse_onboarding_seen("SEEN"));
+        assert!(parse_onboarding_seen("Yes"));
+
+        assert!(!parse_onboarding_seen(""));
+        assert!(!parse_onboarding_seen("0"));
+        assert!(!parse_onboarding_seen("false"));
+        assert!(!parse_onboarding_seen("no"));
+        assert!(!parse_onboarding_seen("corrupted"));
+    }
+
+    #[test]
+    fn onboarding_state_persists_to_disk_and_round_trips() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "rongyok-ssb-test-{}-{unique}",
+            std::process::id()
+        ));
+        let marker = dir.join("nested").join(ONBOARDING_STATE_FILE);
+
+        assert!(!read_onboarding_seen(&marker));
+        write_onboarding_seen(&marker).expect("write onboarding state");
+        assert!(read_onboarding_seen(&marker));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn onboarding_only_auto_opens_on_first_interactive_launch() {
+        assert!(should_show_onboarding(false, false));
+        assert!(!should_show_onboarding(false, true));
+        assert!(!should_show_onboarding(true, false));
+        assert!(!should_show_onboarding(true, true));
+    }
+
+    #[test]
+    fn onboarding_dismiss_url_is_recognized_and_not_treated_as_internal() {
+        let dismiss_url = format!("{ONBOARDING_DISMISS_SCHEME}://{ONBOARDING_DISMISS_HOST}");
+        let dismiss = Url::parse(&dismiss_url).unwrap();
+        assert!(is_onboarding_dismiss_url(&dismiss));
+        assert!(!is_internal(&dismiss));
+
+        assert!(!is_onboarding_dismiss_url(
+            &Url::parse("rongyok-desk://other").unwrap()
+        ));
+        assert!(!is_onboarding_dismiss_url(
+            &Url::parse("https://rongyok.com/onboarding-dismissed").unwrap()
+        ));
+        assert!(!is_onboarding_dismiss_url(
+            &Url::parse("https://rongyok-desk.example/").unwrap()
+        ));
+    }
+
+    #[test]
+    fn onboarding_auto_open_waits_for_finished_internal_http_load() {
+        let home = Url::parse("https://rongyok.com/").unwrap();
+        let blank = Url::parse("about:blank").unwrap();
+        let foreign = Url::parse("https://example.com/").unwrap();
+
+        assert!(should_auto_open_on_page_load(
+            PageLoadEvent::Finished,
+            &home,
+            true
+        ));
+        assert!(!should_auto_open_on_page_load(
+            PageLoadEvent::Started,
+            &home,
+            true
+        ));
+        assert!(!should_auto_open_on_page_load(
+            PageLoadEvent::Finished,
+            &blank,
+            true
+        ));
+        assert!(!should_auto_open_on_page_load(
+            PageLoadEvent::Finished,
+            &foreign,
+            true
+        ));
+        assert!(!should_auto_open_on_page_load(
+            PageLoadEvent::Finished,
+            &home,
+            false
+        ));
+    }
+
+    #[test]
+    fn shortcut_script_contains_isolated_modal_all_shortcuts_and_no_emoji() {
+        let dismiss_url = format!("{ONBOARDING_DISMISS_SCHEME}://{ONBOARDING_DISMISS_HOST}");
+        assert!(SHORTCUT_SCRIPT.contains("attachShadow({ mode: 'closed' })"));
+        assert!(SHORTCUT_SCRIPT.contains(r#":host([data-rongyok-open="true"])"#));
+        assert!(SHORTCUT_SCRIPT.contains("z-index: 2147483647 !important"));
+        assert!(SHORTCUT_SCRIPT.contains("svg { pointer-events: none; }"));
+        assert!(SHORTCUT_SCRIPT.contains("keys-cell"));
+        assert!(SHORTCUT_SCRIPT.contains("overflow-wrap: anywhere"));
+        assert!(SHORTCUT_SCRIPT.contains(r#"grid-template-areas: "action keys" "detail detail""#));
+        assert!(SHORTCUT_SCRIPT.contains("#120e18"));
+        assert!(SHORTCUT_SCRIPT.contains("#e4b65e"));
+        assert!(SHORTCUT_SCRIPT.contains(&dismiss_url));
+        assert!(SHORTCUT_SCRIPT.contains("Alt"));
+        assert!(SHORTCUT_SCRIPT.contains("Left"));
+        assert!(SHORTCUT_SCRIPT.contains("Right"));
+        assert!(SHORTCUT_SCRIPT.contains("F5"));
+        assert!(SHORTCUT_SCRIPT.contains("Ctrl+R"));
+        assert!(SHORTCUT_SCRIPT.contains("Cmd+R"));
+        assert!(SHORTCUT_SCRIPT.contains("Go to rongyok.com"));
+        assert!(SHORTCUT_SCRIPT.contains("F11"));
+        assert!(SHORTCUT_SCRIPT.contains("Open this page in browser"));
+        assert!(SHORTCUT_SCRIPT.contains("Menu only"));
+        assert!(SHORTCUT_SCRIPT.contains("Quit"));
+        assert!(SHORTCUT_SCRIPT.contains("Got it"));
+        assert!(SHORTCUT_SCRIPT.contains("key === 'escape'"));
+        assert!(SHORTCUT_SCRIPT.contains("key === 'f1'"));
+        assert!(SHORTCUT_SCRIPT.contains("code === 'Slash'"));
+        assert!(SHORTCUT_SCRIPT.is_ascii());
+    }
+
+    #[test]
+    fn about_version_info_uses_compile_time_version_and_platform() {
+        let info = version_info_string();
+        let expected_version = format!("v{}", env!("CARGO_PKG_VERSION"));
+        assert!(info.starts_with("Rongyok Desk "));
+        assert!(info.contains(&expected_version));
+        assert!(info.contains(std::env::consts::OS));
+        assert!(info.contains(std::env::consts::ARCH));
+        assert!(info.is_ascii());
+    }
+
+    #[test]
+    fn js_single_quoted_escaper_handles_quotes_backslashes_and_newlines() {
+        assert_eq!(
+            escape_js_single_quoted("a'b\\c\nd\re"),
+            r"a\'b\\c\nd\re"
+        );
+    }
+
+    #[test]
+    fn about_script_contains_isolated_modal_real_version_and_no_emoji() {
+        let script = about_script();
+        let expected_version = format!("v{}", env!("CARGO_PKG_VERSION"));
+
+        assert!(script.is_ascii());
+        assert!(script.contains("rongyok-desk-about-host"));
+        assert!(script.contains("attachShadow({ mode: 'closed' })"));
+        assert!(script.contains(r#":host([data-rongyok-open="true"])"#));
+        assert!(script.contains("z-index: 2147483647 !important"));
+        assert!(script.contains("svg { pointer-events: none; }"));
+        assert!(script.contains("#120e18"));
+        assert!(script.contains("#e4b65e"));
+        assert!(script.contains("@media (max-width: 440px)"));
+        assert!(script.contains("Rongyok Desk"));
+        assert!(script.contains(&expected_version));
+        assert!(script.contains(&version_info_string()));
+        assert!(script.contains(START_URL));
+        assert!(script.contains(APP_COPYRIGHT_JS));
+        assert!(script.contains("Copy Version Info"));
+        assert!(script.contains("Copied!"));
+        assert!(script.contains("key === 'escape'"));
+        assert!(script.contains("window.__rongyokShowAbout"));
+        assert!(script.contains("window.__rongyokCloseAbout"));
+        assert!(script.contains("window.__rongyokCloseShortcuts"));
+        assert!(!script.contains("__APP_NAME__"));
+        assert!(!script.contains("__VERSION_BADGE__"));
+        assert!(!script.contains("__VERSION_INFO__"));
+        assert!(!script.contains("__COPYRIGHT__"));
     }
 }

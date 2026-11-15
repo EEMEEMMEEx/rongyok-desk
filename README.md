@@ -12,11 +12,11 @@
   </p>
 
   <p>
-    <a href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64-setup.exe"><img src="https://img.shields.io/badge/Download-Windows_.exe-0078D4?style=for-the-badge&logo=windows" alt="Download Windows .exe" /></a>
-    <a href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64_en-US.msi"><img src="https://img.shields.io/badge/Download-Windows_.msi-005A9E?style=for-the-badge&logo=windows" alt="Download Windows .msi" /></a>
-    <a href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_aarch64.dmg"><img src="https://img.shields.io/badge/Download-macOS_Apple_Silicon-111111?style=for-the-badge&logo=apple" alt="Download macOS Apple Silicon .dmg" /></a>
-    <a href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64.dmg"><img src="https://img.shields.io/badge/Download-macOS_Intel-333333?style=for-the-badge&logo=apple" alt="Download macOS Intel .dmg" /></a>
-    <a href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok-Desk-1.0.2-x86_64.flatpak"><img src="https://img.shields.io/badge/Download-Linux_.flatpak-4A86CF?style=for-the-badge&logo=linux" alt="Download Linux .flatpak" /></a>
+    <a href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.0.2_x64-setup.exe"><img src="https://img.shields.io/badge/Download-Windows_.exe-0078D4?style=for-the-badge&logo=windows" alt="Download Windows .exe" /></a>
+    <a href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.0.2_x64_en-US.msi"><img src="https://img.shields.io/badge/Download-Windows_.msi-005A9E?style=for-the-badge&logo=windows" alt="Download Windows .msi" /></a>
+    <a href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.0.2_aarch64.dmg"><img src="https://img.shields.io/badge/Download-macOS_Apple_Silicon-111111?style=for-the-badge&logo=apple" alt="Download macOS Apple Silicon .dmg" /></a>
+    <a href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.0.2_x64.dmg"><img src="https://img.shields.io/badge/Download-macOS_Intel-333333?style=for-the-badge&logo=apple" alt="Download macOS Intel .dmg" /></a>
+    <a href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok-Desk-1.0.2-x86_64.flatpak"><img src="https://img.shields.io/badge/Download-Linux_.flatpak-4A86CF?style=for-the-badge&logo=linux" alt="Download Linux .flatpak" /></a>
   </p>
 </div>
 
@@ -30,11 +30,11 @@ Rongyok Desk is a lightweight desktop app built for anyone who wants **https://r
 
 | Platform | Chip | Size | Installer |
 | --- | --- | --- | --- |
-| Windows (recommended) | `x64` | 1.19 MB | [Rongyok.Desk_1.0.2_x64-setup.exe](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64-setup.exe) |
-| Windows (MSI) | `x64` | 1.70 MB | [Rongyok.Desk_1.0.2_x64_en-US.msi](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64_en-US.msi) |
-| macOS (Apple Silicon) | `arm64` | 1.74 MB | [Rongyok.Desk_1.0.2_aarch64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_aarch64.dmg) |
-| macOS (Intel) | `x64` | 1.83 MB | [Rongyok.Desk_1.0.2_x64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64.dmg) |
-| Linux (Flatpak) | `x86_64` | 1.10 MB | [Rongyok-Desk-1.0.2-x86_64.flatpak](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok-Desk-1.0.2-x86_64.flatpak) |
+| Windows (recommended) | `x64` | 1.19 MB | [Rongyok.Desk_1.0.2_x64-setup.exe](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.0.2_x64-setup.exe) |
+| Windows (MSI) | `x64` | 1.70 MB | [Rongyok.Desk_1.0.2_x64_en-US.msi](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.0.2_x64_en-US.msi) |
+| macOS (Apple Silicon) | `arm64` | 1.74 MB | [Rongyok.Desk_1.0.2_aarch64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.0.2_aarch64.dmg) |
+| macOS (Intel) | `x64` | 1.83 MB | [Rongyok.Desk_1.0.2_x64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.0.2_x64.dmg) |
+| Linux (Flatpak) | `x86_64` | 1.10 MB | [Rongyok-Desk-1.0.2-x86_64.flatpak](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok-Desk-1.0.2-x86_64.flatpak) |
 
 <p align="center">
   <img src="shots/now.png" alt="Rongyok Desk window showing rongyok.com" width="760" />
@@ -47,17 +47,17 @@ Rongyok Desk is a lightweight desktop app built for anyone who wants **https://r
 > **Note:** The `v1.0.2` installers are unsigned, so Windows SmartScreen or macOS Gatekeeper will ask you to confirm on first launch.
 
 ### Windows
-1. Download [Rongyok.Desk_1.0.2_x64-setup.exe](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64-setup.exe) (installs for your user account and fetches Microsoft Edge WebView2 Runtime if needed) or [Rongyok.Desk_1.0.2_x64_en-US.msi](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64_en-US.msi).
+1. Download [Rongyok.Desk_1.0.2_x64-setup.exe](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.0.2_x64-setup.exe) (installs for your user account and fetches Microsoft Edge WebView2 Runtime if needed) or [Rongyok.Desk_1.0.2_x64_en-US.msi](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.0.2_x64_en-US.msi).
 2. Run the installer.
 3. If **Windows SmartScreen** warns you, click **More info** then **Run anyway**.
 
 ### macOS (`10.15+`)
-1. Download [Rongyok.Desk_1.0.2_aarch64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_aarch64.dmg) (Apple Silicon) or [Rongyok.Desk_1.0.2_x64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64.dmg) (Intel).
+1. Download [Rongyok.Desk_1.0.2_aarch64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.0.2_aarch64.dmg) (Apple Silicon) or [Rongyok.Desk_1.0.2_x64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.0.2_x64.dmg) (Intel).
 2. Open the `.dmg` and drag **Rongyok Desk.app** into **Applications**.
 3. On first launch, **Control-click (right-click)** the app, then choose **Open** → **Open** (or allow it in **System Settings → Privacy & Security → Open Anyway**).
 
 ### Linux (`x86_64`)
-1. Download [Rongyok-Desk-1.0.2-x86_64.flatpak](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok-Desk-1.0.2-x86_64.flatpak).
+1. Download [Rongyok-Desk-1.0.2-x86_64.flatpak](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok-Desk-1.0.2-x86_64.flatpak).
 2. Install and run the Flatpak bundle (`com.rongyok.ssb`):
 
 ```bash
