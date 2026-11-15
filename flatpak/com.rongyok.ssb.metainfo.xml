@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.rongyok.ssb</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>Rongyok Desk</name>
+  <summary>A dedicated window for rongyok.com</summary>
+
+  <description>
+    <p>
+      Rongyok Desk is a single-site browser. Instead of a browser full of tabs, it
+      gives you one window for one website, so rongyok.com feels like an app
+      rather than a page.
+    </p>
+    <p>
+      It opens the site directly, keeps you signed in between launches, and
+      reopens the window at the size and place you left it. Links to anywhere
+      else open in your normal browser, so the window stays on the one site.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">com.rongyok.ssb.desktop</launchable>
+
+  <url type="homepage">https://rongyok.com/</url>
+  <url type="bugtracker">https://rongyok.com/</url>
+
+  <categories>
+    <category>Network</category>
+    <category>WebBrowser</category>
+  </categories>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="1.0.0" date="2026-01-01">
+      <description>
+        <p>First release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

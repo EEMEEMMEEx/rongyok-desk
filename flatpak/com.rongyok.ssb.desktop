@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Rongyok Desk
+GenericName=Single-Site Browser
+Comment=A dedicated window for rongyok.com
+Exec=rongyok-ssb %u
+Icon=com.rongyok.ssb
+Terminal=false
+Categories=Network;WebBrowser;
+Keywords=rongyok;browser;web;
+StartupNotify=true
+StartupWMClass=com.rongyok.ssb

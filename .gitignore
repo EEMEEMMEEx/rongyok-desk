@@ -1,0 +1,6 @@
+target/
+tools/*/target/
+dist/
+.flatpak-builder/
+build-dir/
+*.log

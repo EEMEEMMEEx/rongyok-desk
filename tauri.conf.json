@@ -1,0 +1,46 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Rongyok Desk",
+  "version": "1.0.1",
+  "identifier": "com.rongyok.ssb",
+  "build": {
+    "frontendDist": "./ui"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi", "dmg"],
+    "publisher": "Rongyok",
+    "copyright": "Copyright © 2026 Rongyok",
+    "category": "Utility",
+    "shortDescription": "A dedicated window for rongyok.com.",
+    "longDescription": "Rongyok Desk is a single-site browser: one window, one site. It opens rongyok.com directly, keeps you signed in between launches, reopens where you left it, and sends other sites to your normal browser.",
+    "homepage": "https://rongyok.com/",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["English"],
+        "compression": "lzma"
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    }
+  }
+}

@@ -1,0 +1,70 @@
+app-id: com.rongyok.ssb
+runtime: org.gnome.Platform
+runtime-version: '48'
+sdk: org.gnome.Sdk
+command: rongyok-ssb
+
+# Rust is not in the SDK itself: it comes from this extension, which the
+# build-options below then put on the PATH. The version tracks the freedesktop
+# release the GNOME runtime above is built on.
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+
+finish-args:
+  # A window, and the surface to draw it on.
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # The app is a browser, so it has to reach rongyok.com. It also has to be able
+  # to hand a link to your normal browser.
+  - --share=network
+  # The site plays video, so it needs sound out.
+  - --socket=pulseaudio
+  # So "open this link in my browser" reaches the desktop instead of dying in
+  # the sandbox.
+  - --talk-name=org.freedesktop.portal.Desktop
+  - --talk-name=org.freedesktop.portal.OpenURI
+  # Your sign-in is kept without any extra permission: Flatpak already gives the
+  # app a permanent data folder at ~/.var/app/com.rongyok.ssb, which is where
+  # the cookies and the remembered window spot are written.
+
+build-options:
+  # Rust comes from the SDK extension rather than the runtime itself.
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/rongyok-ssb/cargo
+
+modules:
+  - name: rongyok-ssb
+    buildsystem: simple
+    build-options:
+      # flatpak-builder gives the build sandbox no network unless it is asked
+      # for, and cargo has to fetch crates from crates.io. For a build that
+      # must run offline, use build-flatpak.sh --vendor: it writes the crates
+      # out as a sources list and this flag can then be dropped.
+      build-args:
+        - --share=network
+    build-commands:
+      - cargo build --release
+      # The binary goes on the sandbox's PATH under the name set by `command`.
+      - install -Dm755 target/release/rongyok-ssb /app/bin/rongyok-ssb
+      # Menu entry, icon, and the metadata software centres read.
+      - install -Dm644 flatpak/com.rongyok.ssb.desktop
+        /app/share/applications/com.rongyok.ssb.desktop
+      - install -Dm644 flatpak/com.rongyok.ssb.metainfo.xml
+        /app/share/metainfo/com.rongyok.ssb.metainfo.xml
+      - install -Dm644 icons/icon.png
+        /app/share/icons/hicolor/512x512/apps/com.rongyok.ssb.png
+    sources:
+      # The app itself: `..` is the folder holding Cargo.toml, which is app/.
+      # flatpak/ must stay in the list, because the build commands install the
+      # desktop entry and metainfo from it.
+      - type: dir
+        path: ..
+        skip:
+          - target
+          - tools
+          - shots
+          - dist
+          - .github

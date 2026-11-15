@@ -1,0 +1,219 @@
+name: Release
+
+# Builds all four installer formats and attaches them to a GitHub release:
+#   Rongyok Desk_<version>_x64-setup.exe     Windows, NSIS installer
+#   Rongyok Desk_<version>_x64_en-US.msi     Windows, MSI installer
+#   Rongyok Desk_<version>_<arch>.dmg        macOS, disk image
+#   Rongyok-Desk-<version>-<arch>.flatpak    Linux, Flatpak bundle
+#
+# Push a tag like v1.0.0 to publish a release. You can also run it by hand from
+# the Actions tab to get the installers as downloadable files, without
+# publishing anything.
+#
+# WHERE THIS FILE GOES: GitHub only reads workflows from .github/workflows at
+# the top of the repository. This copy sits inside app/, next to the code it
+# builds. If app/ is the top of your repository, it is already in the right
+# place. If your repository has app/ one level down, copy this file to
+# <repo root>/.github/workflows/release.yml.
+#
+# Either layout works: every job first finds the folder holding tauri.conf.json
+# and builds there, so it does not matter how deep the app sits.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+# Needed to create the release and upload files to it.
+permissions:
+  contents: write
+
+jobs:
+  # ---------------------------------------------------------------- Windows
+  windows:
+    name: Windows (nsis .exe + msi .msi)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find the app folder
+        id: app
+        shell: bash
+        run: |
+          set -euo pipefail
+          conf="$(find . -name tauri.conf.json \
+            -not -path '*/target/*' -not -path '*/node_modules/*' | head -n 1)"
+          [ -n "$conf" ] || { echo "No tauri.conf.json found"; exit 1; }
+          echo "path=$(dirname "$conf")" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ steps.app.outputs.path }}/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Build the installers
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # The folder holding tauri.conf.json, found above.
+          projectPath: ${{ steps.app.outputs.path }}
+          # On a tag this creates a draft release; a manual run passes empty
+          # strings, which makes tauri-action build without publishing.
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('Rongyok Desk {0}', github.ref_name) || '' }}
+          releaseDraft: true
+          prerelease: false
+          args: --target x86_64-pc-windows-msvc
+
+      # Keep the installers on the run as well, so they can be downloaded even
+      # when no release was made.
+      - name: Upload the installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installers
+          path: |
+            ${{ steps.app.outputs.path }}/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            ${{ steps.app.outputs.path }}/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+          if-no-files-found: error
+
+  # ------------------------------------------------------------------ macOS
+  # One job per chip: a .dmg has to be built on the machine it is meant for.
+  macos:
+    name: macOS (dmg .dmg, ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: aarch64
+            runner: macos-14      # Apple Silicon
+            target: aarch64-apple-darwin
+          - arch: x86_64
+            runner: macos-14      # Cross-compile Intel on Apple Silicon runner
+            target: x86_64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find the app folder
+        id: app
+        shell: bash
+        run: |
+          set -euo pipefail
+          conf="$(find . -name tauri.conf.json \
+            -not -path '*/target/*' -not -path '*/node_modules/*' | head -n 1)"
+          [ -n "$conf" ] || { echo "No tauri.conf.json found"; exit 1; }
+          echo "path=$(dirname "$conf")" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ steps.app.outputs.path }}/target
+          key: ${{ runner.os }}-${{ matrix.arch }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-${{ matrix.arch }}-cargo-
+
+      - name: Build the disk image
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: ${{ steps.app.outputs.path }}
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('Rongyok Desk {0}', github.ref_name) || '' }}
+          releaseDraft: true
+          prerelease: false
+          args: --target ${{ matrix.target }}
+
+      - name: Upload the disk image
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg-${{ matrix.arch }}
+          path: ${{ steps.app.outputs.path }}/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+
+  # ------------------------------------------------------------------ Linux
+  # The .flatpak is not built by tauri-action: Flatpak is its own packaging
+  # system, and flatpak-builder has to compile the app inside the runtime
+  # sandbox so the result links against that runtime's libraries.
+  flatpak:
+    name: Linux (flatpak .flatpak)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find the app folder
+        id: app
+        shell: bash
+        run: |
+          set -euo pipefail
+          conf="$(find . -name tauri.conf.json \
+            -not -path '*/target/*' -not -path '*/node_modules/*' | head -n 1)"
+          [ -n "$conf" ] || { echo "No tauri.conf.json found"; exit 1; }
+          echo "path=$(dirname "$conf")" >> "$GITHUB_OUTPUT"
+
+      - name: Install flatpak and flatpak-builder
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          # The runtime, the SDK, and the extension carrying Rust: the manifest
+          # names all three.
+          flatpak remote-add --user --if-not-exists flathub \
+            https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user --noninteractive flathub \
+            org.gnome.Platform//48 \
+            org.gnome.Sdk//48 \
+            org.freedesktop.Sdk.Extension.rust-stable//24.08
+
+      - name: Build the Flatpak
+        working-directory: ${{ steps.app.outputs.path }}
+        run: ./flatpak/build-flatpak.sh
+
+      - name: Upload the Flatpak bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-flatpak
+          path: ${{ steps.app.outputs.path }}/dist/flatpak/*.flatpak
+          if-no-files-found: error
+
+      # Attach the bundle to the same release tauri-action made. This job can
+      # finish before the others, so it waits for the release to appear. On a
+      # manual run there is no release and it just keeps the artifact.
+      - name: Attach the Flatpak to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          APP: ${{ steps.app.outputs.path }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              echo "Release $TAG is ready."
+              gh release upload "$TAG" "$APP"/dist/flatpak/*.flatpak --clobber
+              exit 0
+            fi
+            echo "Waiting for release $TAG (attempt $attempt of 60)…"
+            sleep 10
+          done
+          echo "No release $TAG appeared; the bundle is still on this run as a build artifact."
+          exit 0

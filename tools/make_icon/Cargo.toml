@@ -1,0 +1,10 @@
+[package]
+name = "make_icon"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+png = "0.17"
+
+[workspace]
