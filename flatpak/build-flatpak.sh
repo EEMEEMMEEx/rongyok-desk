@@ -18,7 +18,7 @@ set -euo pipefail
 APP_ID="com.rongyok.ssb"
 MANIFEST="flatpak/${APP_ID}.yml"
 ARCH="${FLATPAK_ARCH:-x86_64}"
-RUNTIME_VERSION="48"
+RUNTIME_VERSION="49"
 
 # Work from app/, wherever the script was called from.
 cd "$(dirname "$0")/.."
@@ -61,7 +61,7 @@ fi
 # The SDK extension carries Rust, which the manifest puts on the PATH.
 RUNTIME_REF="runtime/org.gnome.Platform/${ARCH}/${RUNTIME_VERSION}"
 SDK_REF="runtime/org.gnome.Sdk/${ARCH}/${RUNTIME_VERSION}"
-SIMPLE_SDK_REF="runtime/org.freedesktop.Sdk.Extension.rust-stable/${ARCH}/24.08"
+SIMPLE_SDK_REF="runtime/org.freedesktop.Sdk.Extension.rust-stable/${ARCH}/25.08"
 
 for ref in "$RUNTIME_REF" "$SDK_REF" "$SIMPLE_SDK_REF"; do
   if ! flatpak info "$ref" >/dev/null 2>&1; then

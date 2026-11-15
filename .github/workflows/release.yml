@@ -98,10 +98,10 @@ jobs:
       matrix:
         include:
           - arch: aarch64
-            runner: macos-14      # Apple Silicon
+            runner: macos-15      # Apple Silicon
             target: aarch64-apple-darwin
           - arch: x86_64
-            runner: macos-14      # Cross-compile Intel on Apple Silicon runner
+            runner: macos-15      # Cross-compile Intel on Apple Silicon runner
             target: x86_64-apple-darwin
     steps:
       - uses: actions/checkout@v4
@@ -180,9 +180,9 @@ jobs:
           flatpak remote-add --user --if-not-exists flathub \
             https://flathub.org/repo/flathub.flatpakrepo
           flatpak install --user --noninteractive flathub \
-            org.gnome.Platform//48 \
-            org.gnome.Sdk//48 \
-            org.freedesktop.Sdk.Extension.rust-stable//24.08
+            org.gnome.Platform//49 \
+            org.gnome.Sdk//49 \
+            org.freedesktop.Sdk.Extension.rust-stable//25.08
 
       - name: Build the Flatpak
         working-directory: ${{ steps.app.outputs.path }}

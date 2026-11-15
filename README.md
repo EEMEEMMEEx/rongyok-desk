@@ -38,10 +38,10 @@ formats are configured:
 
 | Format | Made on | File |
 | --- | --- | --- |
-| NSIS installer | Windows | `Rongyok Desk_1.0.1_x64-setup.exe` |
-| MSI installer | Windows | `Rongyok Desk_1.0.1_x64_en-US.msi` |
-| Disk image | macOS | `Rongyok Desk_1.0.1_<arch>.dmg` |
-| Flatpak | Linux | `Rongyok-Desk-1.0.1-x86_64.flatpak` |
+| NSIS installer | Windows | `Rongyok Desk_1.0.2_x64-setup.exe` |
+| MSI installer | Windows | `Rongyok Desk_1.0.2_x64_en-US.msi` |
+| Disk image | macOS | `Rongyok Desk_1.0.2_<arch>.dmg` |
+| Flatpak | Linux | `Rongyok-Desk-1.0.2-x86_64.flatpak` |
 
 The Windows and macOS ones come from the Tauri command line tool:
 
@@ -76,7 +76,7 @@ and `flatpak-builder` installed:
 That writes `dist/flatpak/Rongyok-Desk-<version>-x86_64.flatpak`, which installs with:
 
 ```
-flatpak install --user dist/flatpak/Rongyok-Desk-1.0.1-x86_64.flatpak
+flatpak install --user dist/flatpak/Rongyok-Desk-1.0.2-x86_64.flatpak
 flatpak run com.rongyok.ssb
 ```
 

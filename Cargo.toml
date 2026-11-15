@@ -1,6 +1,6 @@
 [package]
 name = "rongyok-ssb"
-version = "1.0.1"
+version = "1.0.2"
 description = "Rongyok Desk — dedicated single-site browser for rongyok.com"
 edition = "2021"
 rust-version = "1.90"
