@@ -2,6 +2,7 @@
   <img src="icons/icon.png" alt="Rongyok Desk icon" width="96" height="96" />
   <h1>Rongyok Desk</h1>
   <p><strong>A dedicated single-site desktop browser for <a href="https://rongyok.com/">rongyok.com</a></strong></p>
+  <p><strong>English</strong> · <a href="README.th.md">ภาษาไทย</a></p>
 
   <p>
     <img src="https://img.shields.io/badge/version-v1.0.2-e4b65e?style=flat-square" alt="Version v1.0.2" />
@@ -19,21 +20,21 @@
   </p>
 </div>
 
-Rongyok Desk opens **https://rongyok.com/** in a dedicated native window (`1280×800`, minimum `520×400`) so the site behaves like a standalone desktop app instead of a browser tab.
+## Overview
+
+Rongyok Desk is a lightweight desktop app built for anyone who wants **https://rongyok.com/** in its own window instead of a browser tab. It opens straight to the site in a `1280×800` window (minimum `520×400`) and keeps your session signed in between launches. External links open in your default web browser, so this window stays focused on Rongyok.
 
 ---
 
-## Direct Downloads (`v1.0.2`)
+## Download (`v1.0.2`)
 
-| Platform | Architecture | Format | Size | Direct Download |
-| --- | --- | --- | --- | --- |
-| **Windows** | `x64` | NSIS Installer (`.exe`) — *Recommended* | 1.19 MB | [Rongyok.Desk_1.0.2_x64-setup.exe](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64-setup.exe) |
-| **Windows** | `x64` | Windows Installer (`.msi`) | 1.70 MB | [Rongyok.Desk_1.0.2_x64_en-US.msi](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64_en-US.msi) |
-| **macOS** | Apple Silicon (`arm64`) | Disk Image (`.dmg`) | 1.74 MB | [Rongyok.Desk_1.0.2_aarch64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_aarch64.dmg) |
-| **macOS** | Intel (`x64`) | Disk Image (`.dmg`) | 1.83 MB | [Rongyok.Desk_1.0.2_x64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64.dmg) |
-| **Linux** | `x86_64` | Flatpak Bundle (`.flatpak`) | 1.10 MB | [Rongyok-Desk-1.0.2-x86_64.flatpak](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok-Desk-1.0.2-x86_64.flatpak) |
-
-### Preview
+| Platform | Chip | Size | Installer |
+| --- | --- | --- | --- |
+| Windows (recommended) | `x64` | 1.19 MB | [Rongyok.Desk_1.0.2_x64-setup.exe](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64-setup.exe) |
+| Windows (MSI) | `x64` | 1.70 MB | [Rongyok.Desk_1.0.2_x64_en-US.msi](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64_en-US.msi) |
+| macOS (Apple Silicon) | `arm64` | 1.74 MB | [Rongyok.Desk_1.0.2_aarch64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_aarch64.dmg) |
+| macOS (Intel) | `x64` | 1.83 MB | [Rongyok.Desk_1.0.2_x64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64.dmg) |
+| Linux (Flatpak) | `x86_64` | 1.10 MB | [Rongyok-Desk-1.0.2-x86_64.flatpak](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok-Desk-1.0.2-x86_64.flatpak) |
 
 <p align="center">
   <img src="shots/now.png" alt="Rongyok Desk window showing rongyok.com" width="760" />
@@ -41,47 +42,63 @@ Rongyok Desk opens **https://rongyok.com/** in a dedicated native window (`1280�
 
 ---
 
-## Installation Notes
+## Installation
 
-> **Unsigned Builds Notice:** The `v1.0.2` installers are currently unsigned. Windows SmartScreen and macOS Gatekeeper will show a first-run warning until code-signing certificates are configured.
+> **Note:** The `v1.0.2` installers are unsigned, so Windows SmartScreen or macOS Gatekeeper will ask you to confirm on first launch.
 
-- **Windows (`.exe` / `.msi`)**
-  1. Download and run [Rongyok.Desk_1.0.2_x64-setup.exe](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64-setup.exe) (per-user installer; automatically downloads Microsoft Edge WebView2 Runtime if missing) or [Rongyok.Desk_1.0.2_x64_en-US.msi](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64_en-US.msi).
-  2. If **Windows SmartScreen** appears on first launch, click **More info** → **Run anyway**.
+### Windows
+1. Download [Rongyok.Desk_1.0.2_x64-setup.exe](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64-setup.exe) (installs for your user account and fetches Microsoft Edge WebView2 Runtime if needed) or [Rongyok.Desk_1.0.2_x64_en-US.msi](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64_en-US.msi).
+2. Run the installer.
+3. If **Windows SmartScreen** warns you, click **More info** then **Run anyway**.
 
-- **macOS (`10.15+`)**
-  1. Download [Rongyok.Desk_1.0.2_aarch64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_aarch64.dmg) (Apple Silicon) or [Rongyok.Desk_1.0.2_x64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64.dmg) (Intel).
-  2. Open the `.dmg` and drag **Rongyok Desk.app** into **Applications**.
-  3. On first launch, bypass **macOS Gatekeeper** by **Control-clicking (right-clicking)** the app → **Open** → **Open** (or allow it via **System Settings → Privacy & Security → Open Anyway**).
+### macOS (`10.15+`)
+1. Download [Rongyok.Desk_1.0.2_aarch64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_aarch64.dmg) (Apple Silicon) or [Rongyok.Desk_1.0.2_x64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64.dmg) (Intel).
+2. Open the `.dmg` and drag **Rongyok Desk.app** into **Applications**.
+3. On first launch, **Control-click (right-click)** the app, then choose **Open** → **Open** (or allow it in **System Settings → Privacy & Security → Open Anyway**).
 
-- **Linux (`x86_64` Flatpak)**
-  ```bash
-  flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-  flatpak install --user Rongyok-Desk-1.0.2-x86_64.flatpak
-  flatpak run com.rongyok.ssb
-  ```
+### Linux (`x86_64`)
+1. Download [Rongyok-Desk-1.0.2-x86_64.flatpak](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok-Desk-1.0.2-x86_64.flatpak).
+2. Install and run the Flatpak bundle (`com.rongyok.ssb`):
+
+```bash
+flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+flatpak install --user Rongyok-Desk-1.0.2-x86_64.flatpak
+flatpak run com.rongyok.ssb
+```
 
 ---
 
-## Key Features
+## Features
 
-- **One Window, One Site** — Opens directly at `https://rongyok.com/` in a clean `1280×800` native window with persistent cookies, cache, and `localStorage` stored on disk (`<app_local_data_dir>/webview`; `~/.var/app/com.rongyok.ssb` on Flatpak) so logins survive restarts.
-- **Strict Domain Isolation** — Every navigation (`on_navigation`) and pop-up / `target="_blank"` request (`on_new_window`) is checked before loading. Only `http://` and `https://` URLs on `rongyok.com` or `*.rongyok.com` (plus internal `about:`, `data:`, `blob:` webview URLs) load inside the window.
-- **External Link Handoff** — Links to other domains, lookalike hosts, or external schemes (`mailto:`, `tel:`, `file:`) automatically open in your default system browser (`ShellExecuteW` on Windows, `open` on macOS, `xdg-open` on Linux) while keeping Rongyok Desk on the site.
-- **Remembered Window Placement** — Saves `x y width height maximized` to `window-placement.txt` on close/destroy. Validates usable bounds (`520..20000 × 400..20000`) and checks `available_monitors()` on startup, falling back to a centered window on the primary monitor if a display was disconnected.
-- **HTML5 Media & Fullscreen** — Enables autoplay without prior gesture (`--autoplay-policy=no-user-gesture-required`) and disables background throttling. On Windows WebView2, `ContainsFullScreenElementChanged` syncs HTML5 video fullscreen with native window fullscreen; Flatpak enables `--socket=pulseaudio` and `--device=dri`.
-- **Resilient Keyboard Shortcuts & Menu** — Capture-phase JS listeners prevent page scripts from swallowing navigation keys, paired with a native **Navigate** menu.
-- **Production Hygiene** — DevTools are enabled only in debug builds (`cfg!(debug_assertions)`) and disabled in release builds.
+- **Focused single-site window** — Opens `https://rongyok.com/` at `1280×800` and keeps your cookies and login across restarts.
+- **Strict domain lock** — Loads only `rongyok.com` and its subdomains inside the app window.
+- **External link handoff** — Sends links to other websites, lookalike domains, and email or file links to your default browser.
+- **Remembered window placement** — Reopens at your last size and position, or centers on the main screen if a monitor was unplugged.
+- **Smooth media and fullscreen** — Plays video and audio automatically and expands videos to fill the window.
+- **Reliable shortcuts and clean release** — Keeps navigation keys working over page scripts and disables DevTools (the browser inspector) in release builds.
 
-### Keyboard Shortcuts & Menu
+<details>
+<summary>Technical details</summary>
+
+- **Persistent session storage:** Cookies, cache, and `localStorage` live on disk at `<app_local_data_dir>/webview` (`~/.var/app/com.rongyok.ssb` on Flatpak).
+- **Navigation and pop-up rules:** `on_navigation` and `on_new_window` (`target="_blank"`) allow only `http://` and `https://` URLs on `rongyok.com` or `*.rongyok.com`, plus internal `about:`, `data:`, and `blob:` webview URLs.
+- **External browser dispatch:** Blocked domains, lookalike hosts, and external schemes (`mailto:`, `tel:`, `file:`) launch via `ShellExecuteW` on Windows, `open` on macOS, or `xdg-open` on Linux.
+- **Window placement persistence:** Saves `x y width height maximized` to `window-placement.txt` on close/destroy, checks bounds (`520..20000 × 400..20000`), and verifies `available_monitors()` at startup.
+- **Media and Flatpak permissions:** Uses `--autoplay-policy=no-user-gesture-required` with background throttling disabled, syncs Windows WebView2 `ContainsFullScreenElementChanged` to native fullscreen, and enables `--socket=pulseaudio` and `--device=dri` in Flatpak.
+- **Shortcuts and DevTools:** Capture-phase JS listeners protect navigation keys alongside the native **Navigate** menu; DevTools are gated behind `cfg!(debug_assertions)`.
+
+</details>
+
+---
+
+## Keyboard Shortcuts
 
 | Action | Shortcut | Notes |
 | --- | --- | --- |
-| Back | `Alt+Left` | Handled at capture phase + **Navigate** menu |
-| Forward | `Alt+Right` | Handled at capture phase + **Navigate** menu |
-| Reload | `F5` / `Ctrl+R` / `Cmd+R` | Reloads current page |
-| Go to `rongyok.com` | `Ctrl+H` | Returns to `START_URL` (`https://rongyok.com/`) |
-| Full screen | `F11` | Toggles native window fullscreen |
-| Open this page in browser | Menu only | Opens current URL in system browser |
-| Quit | `Ctrl+Q` | Closes the application |
-
+| Back | `Alt+Left` | Also in **Navigate** menu |
+| Forward | `Alt+Right` | Also in **Navigate** menu |
+| Reload | `F5` / `Ctrl+R` / `Cmd+R` | Reloads page |
+| Go to `rongyok.com` | `Ctrl+H` | Opens `https://rongyok.com/` (`START_URL`) |
+| Full screen | `F11` | Toggles fullscreen |
+| Open this page in browser | Menu only | Opens current page in system browser |
+| Quit | `Ctrl+Q` | Closes app |
