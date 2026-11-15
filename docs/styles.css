@@ -321,6 +321,10 @@ kbd {
   border-radius: 10px;
 }
 
+.btn-block {
+  width: 100%;
+}
+
 /* Hero */
 .hero {
   padding: 3.75rem 0 4.25rem;
@@ -612,7 +616,8 @@ kbd {
 }
 
 .asset-meta {
-  margin: auto 0 0;
+  margin: 0 0 1.15rem;
+  margin-top: auto;
   padding-top: 0.85rem;
   border-top: 1px solid var(--border);
   display: grid;
