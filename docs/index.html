@@ -1,0 +1,1009 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Rongyok Desk — Dedicated Desktop App for rongyok.com</title>
+    <meta
+      name="description"
+      content="Rongyok Desk v1.0.2 is a lightweight single-site desktop browser for rongyok.com built with Rust and Tauri v2, available for Windows, macOS, and Linux."
+    />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="icon" type="image/png" href="./assets/icon.png" />
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem("rongyok-desk-theme");
+          var prefersLight =
+            window.matchMedia &&
+            window.matchMedia("(prefers-color-scheme: light)").matches;
+          var theme =
+            saved === "light" || saved === "dark"
+              ? saved
+              : prefersLight
+                ? "light"
+                : "dark";
+          document.documentElement.setAttribute("data-theme", theme);
+        } catch (_err) {
+          document.documentElement.setAttribute("data-theme", "dark");
+        }
+      })();
+    </script>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
+    <header class="site-header" id="top">
+      <div class="container nav-inner">
+        <a class="brand" href="#top" aria-label="Rongyok Desk home">
+          <img
+            class="brand-icon"
+            src="./assets/icon.png"
+            alt="Rongyok Desk app icon"
+            width="36"
+            height="36"
+          />
+          <span class="brand-text">
+            <span class="brand-name">Rongyok Desk</span>
+            <span class="brand-version">v1.0.2</span>
+          </span>
+        </a>
+
+        <nav class="nav-links" id="primary-nav" aria-label="Primary navigation">
+          <a href="#features">Features</a>
+          <a href="#downloads">Platforms</a>
+          <a href="#install">Install Guide</a>
+          <a href="#shortcuts">Shortcuts</a>
+        </nav>
+
+        <div class="nav-actions">
+          <button
+            type="button"
+            class="icon-btn"
+            id="theme-toggle"
+            aria-label="Switch to light theme"
+            aria-pressed="false"
+            title="Toggle color theme"
+          >
+            <svg
+              class="icon-sun"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v2" />
+              <path d="M12 20v2" />
+              <path d="m4.93 4.93 1.41 1.41" />
+              <path d="m17.66 17.66 1.41 1.41" />
+              <path d="M2 12h2" />
+              <path d="M20 12h2" />
+              <path d="m6.34 17.66-1.41 1.41" />
+              <path d="m19.07 4.93-1.41 1.41" />
+            </svg>
+            <svg
+              class="icon-moon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+            </svg>
+          </button>
+
+          <a
+            class="btn btn-primary nav-cta"
+            href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/tag/untagged-64ea1f088167a8283cd3"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            <span>Download</span>
+          </a>
+
+          <button
+            type="button"
+            class="icon-btn mobile-menu-btn"
+            id="nav-toggle"
+            aria-label="Toggle navigation menu"
+            aria-expanded="false"
+            aria-controls="mobile-nav"
+          >
+            <svg
+              class="icon-menu"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <line x1="4" y1="6" x2="20" y2="6" />
+              <line x1="4" y1="12" x2="20" y2="12" />
+              <line x1="4" y1="18" x2="20" y2="18" />
+            </svg>
+            <svg
+              class="icon-close"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="mobile-nav" id="mobile-nav" hidden>
+        <div class="container mobile-nav-inner">
+          <a href="#features">Features</a>
+          <a href="#downloads">Platforms</a>
+          <a href="#install">Install Guide</a>
+          <a href="#shortcuts">Shortcuts</a>
+          <a
+            class="btn btn-primary mobile-nav-cta"
+            href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/tag/untagged-64ea1f088167a8283cd3"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Download v1.0.2
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="hero">
+        <div class="container hero-grid">
+          <div class="hero-copy">
+            <div class="hero-badge">
+              <span class="badge-dot" aria-hidden="true"></span>
+              <span>Version 1.0.2 · Rust + Tauri v2 · Windows, macOS &amp; Linux</span>
+            </div>
+
+            <h1>
+              Your dedicated desktop app for
+              <span class="accent-text">rongyok.com</span>
+            </h1>
+
+            <p class="hero-lead">
+              Rongyok Desk is a fast single-site desktop browser (SSB) that
+              launches <code>https://rongyok.com/</code> inside a clean
+              1280&times;800 native window—with strict domain isolation,
+              persistent logins, remembered window placement, and smooth HTML5
+              media playback.
+            </p>
+
+            <div class="hero-actions">
+              <a
+                class="btn btn-primary btn-lg"
+                href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/tag/untagged-64ea1f088167a8283cd3"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                <span>Download v1.0.2</span>
+              </a>
+
+              <a class="btn btn-secondary btn-lg" href="#downloads">
+                <span>All Installers</span>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M5 12h14" />
+                  <path d="m12 5 7 7-7 7" />
+                </svg>
+              </a>
+            </div>
+
+            <dl class="hero-specs">
+              <div>
+                <dt>App ID</dt>
+                <dd><code>com.rongyok.ssb</code></dd>
+              </div>
+              <div>
+                <dt>Installers</dt>
+                <dd><code>.exe</code> · <code>.msi</code> · <code>.dmg</code> · <code>.flatpak</code></dd>
+              </div>
+              <div>
+                <dt>Package Size</dt>
+                <dd>1.10 – 1.83 MB</dd>
+              </div>
+            </dl>
+          </div>
+
+          <div class="hero-visual">
+            <div class="app-frame">
+              <div class="app-frame-bar" aria-hidden="true">
+                <div class="frame-dots">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+                <div class="frame-title">
+                  <img src="./assets/icon.png" alt="" width="16" height="16" />
+                  <span>Rongyok Desk — rongyok.com</span>
+                </div>
+                <div class="frame-spacer"></div>
+              </div>
+              <img
+                class="app-screenshot"
+                src="./assets/now.png"
+                alt="Screenshot of Rongyok Desk showing rongyok.com with Thai short-drama listings, search bar, and navigation bar"
+                width="1280"
+                height="780"
+                loading="eager"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="features">
+        <div class="container">
+          <div class="section-header">
+            <p class="section-eyebrow">Built for Focus</p>
+            <h2>Desktop-native behavior without browser tab clutter</h2>
+            <p class="section-subtitle">
+              Every detail in <code>rongyok-ssb</code> is implemented in Rust and
+              Tauri v2 (<code>wry</code>) to keep Rongyok responsive, isolated,
+              and ready for media playback.
+            </p>
+          </div>
+
+          <div class="feature-grid">
+            <article class="card feature-card">
+              <div class="feature-icon" aria-hidden="true">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />
+                  <path d="m9 12 2 2 4-4" />
+                </svg>
+              </div>
+              <h3>Strict Domain Isolation</h3>
+              <p>
+                Allows only <code>https://</code> and <code>http://</code>
+                navigation for <code>rongyok.com</code> and
+                <code>*.rongyok.com</code> (plus internal <code>about:</code>,
+                <code>data:</code>, and <code>blob:</code> webview URLs).
+                Lookalike hosts and external schemes like <code>mailto:</code>,
+                <code>tel:</code>, and <code>file:</code> are blocked from
+                hijacking the window.
+              </p>
+            </article>
+
+            <article class="card feature-card">
+              <div class="feature-icon" aria-hidden="true">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                  <polyline points="15 3 21 3 21 9" />
+                  <line x1="10" y1="14" x2="21" y2="3" />
+                </svg>
+              </div>
+              <h3>External Link Handoff</h3>
+              <p>
+                Non-Rongyok links and external <code>target="_blank"</code>
+                pop-ups open automatically in your system default browser
+                (<code>ShellExecuteW</code> on Windows, <code>open</code> on
+                macOS, <code>xdg-open</code> on Linux), while same-site pop-ups
+                stay inside the app window.
+              </p>
+            </article>
+
+            <article class="card feature-card">
+              <div class="feature-icon" aria-hidden="true">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <ellipse cx="12" cy="5" rx="9" ry="3" />
+                  <path d="M3 5v14a9 3 0 0 0 18 0V5" />
+                  <path d="M3 12a9 3 0 0 0 18 0" />
+                </svg>
+              </div>
+              <h3>Persistent Session &amp; Cookies</h3>
+              <p>
+                Webview storage and cookies persist across launches in your
+                local app data directory (<code>&lt;app_local_data_dir&gt;/webview</code>,
+                or <code>~/.var/app/com.rongyok.ssb</code> on Flatpak), keeping
+                your login and watch state intact.
+              </p>
+            </article>
+
+            <article class="card feature-card">
+              <div class="feature-icon" aria-hidden="true">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <rect width="18" height="14" x="3" y="3" rx="2" />
+                  <path d="M7 21h10" />
+                  <path d="M12 17v4" />
+                </svg>
+              </div>
+              <h3>Remembered Window Placement</h3>
+              <p>
+                Saves window coordinates, size (default <code>1280&times;800</code>,
+                min <code>520&times;400</code>), and maximized state in
+                <code>window-placement.txt</code>. Validates against connected
+                monitors on startup and re-centers safely if a display was
+                unplugged.
+              </p>
+            </article>
+
+            <article class="card feature-card">
+              <div class="feature-icon" aria-hidden="true">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <polygon points="6 3 20 12 6 21 6 3" />
+                </svg>
+              </div>
+              <h3>HTML5 Media &amp; Fullscreen</h3>
+              <p>
+                Configures <code>--autoplay-policy=no-user-gesture-required</code>
+                and disables background throttling for uninterrupted playback.
+                Syncs HTML5 video fullscreen on Windows WebView2 and enables
+                PulseAudio and DRI hardware rendering in Flatpak.
+              </p>
+            </article>
+
+            <article class="card feature-card">
+              <div class="feature-icon" aria-hidden="true">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <rect width="20" height="14" x="2" y="5" rx="2" />
+                  <path d="M6 9h.01" />
+                  <path d="M10 9h.01" />
+                  <path d="M14 9h.01" />
+                  <path d="M18 9h.01" />
+                  <path d="M8 15h8" />
+                </svg>
+              </div>
+              <h3>Shortcuts &amp; Release Hygiene</h3>
+              <p>
+                Capture-phase keyboard listeners ensure navigation shortcuts work
+                even when page scripts intercept keys. DevTools are disabled in
+                release builds, and Windows includes a non-focused
+                <code>--screenshot &lt;file.png&gt;</code> diagnostic CLI flag.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section-alt" id="downloads">
+        <div class="container">
+          <div class="section-header">
+            <p class="section-eyebrow">Release v1.0.2</p>
+            <h2>Supported Platforms &amp; Installers</h2>
+            <p class="section-subtitle">
+              All installers are published on the official GitHub Release.
+              Download directly by platform or open the
+              <a
+                href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/tag/untagged-64ea1f088167a8283cd3"
+                target="_blank"
+                rel="noopener noreferrer"
+                >v1.0.2 Release page</a
+              >.
+            </p>
+          </div>
+
+          <div class="platform-grid">
+            <article class="card platform-card platform-featured">
+              <div class="platform-top">
+                <div class="os-badge">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path
+                      d="M3 5.5 10.5 4.4v7.1H3V5.5Zm8.5-1.3L21 3v8.5h-9.5V4.2ZM3 12.5h7.5v7.1L3 18.5v-6Zm8.5 0H21V21l-9.5-1.3v-7.2Z"
+                    />
+                  </svg>
+                  <span>Windows x64</span>
+                </div>
+                <span class="pill-tag">Recommended</span>
+              </div>
+              <h3>NSIS Setup (<code>.exe</code>)</h3>
+              <p class="platform-desc">
+                Per-user installer with automatic Microsoft Edge WebView2
+                Runtime bootstrap if missing.
+              </p>
+              <dl class="asset-meta">
+                <div>
+                  <dt>File</dt>
+                  <dd><code>Rongyok.Desk_1.0.2_x64-setup.exe</code></dd>
+                </div>
+                <div>
+                  <dt>Size</dt>
+                  <dd>1.19 MB</dd>
+                </div>
+              </dl>
+              <a
+                class="btn btn-primary btn-block"
+                href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64-setup.exe"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Download .exe
+              </a>
+            </article>
+
+            <article class="card platform-card">
+              <div class="platform-top">
+                <div class="os-badge">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path
+                      d="M3 5.5 10.5 4.4v7.1H3V5.5Zm8.5-1.3L21 3v8.5h-9.5V4.2ZM3 12.5h7.5v7.1L3 18.5v-6Zm8.5 0H21V21l-9.5-1.3v-7.2Z"
+                    />
+                  </svg>
+                  <span>Windows x64</span>
+                </div>
+                <span class="pill-muted">MSI</span>
+              </div>
+              <h3>Windows Installer (<code>.msi</code>)</h3>
+              <p class="platform-desc">
+                Standard Windows Installer package for managed or system-style
+                deployments on 64-bit Windows.
+              </p>
+              <dl class="asset-meta">
+                <div>
+                  <dt>File</dt>
+                  <dd><code>Rongyok.Desk_1.0.2_x64_en-US.msi</code></dd>
+                </div>
+                <div>
+                  <dt>Size</dt>
+                  <dd>1.70 MB</dd>
+                </div>
+              </dl>
+              <a
+                class="btn btn-secondary btn-block"
+                href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64_en-US.msi"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Download .msi
+              </a>
+            </article>
+
+            <article class="card platform-card">
+              <div class="platform-top">
+                <div class="os-badge">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path
+                      d="M16.36 12.76c-.02-2.21 1.81-3.28 1.89-3.33-1.03-1.51-2.64-1.72-3.21-1.74-1.35-.14-2.66.81-3.35.81-.7 0-1.76-.79-2.9-.77-1.48.02-2.85.87-3.61 2.2-1.55 2.69-.4 6.66 1.1 8.84.74 1.07 1.62 2.27 2.77 2.22 1.12-.04 1.54-.72 2.89-.72 1.35 0 1.73.72 2.9.69 1.2-.02 1.96-1.08 2.69-2.15.86-1.25 1.21-2.46 1.23-2.52-.03-.01-2.38-.91-2.4-3.61ZM14.17 6.32c.61-.74 1.03-1.77.91-2.8-.88.04-1.95.59-2.58 1.33-.56.65-1.06 1.7-.93 2.7.99.08 1.99-.5 2.6-1.23Z"
+                    />
+                  </svg>
+                  <span>macOS Apple Silicon</span>
+                </div>
+                <span class="pill-muted">arm64</span>
+              </div>
+              <h3>Disk Image (<code>.dmg</code>)</h3>
+              <p class="platform-desc">
+                Native Apple Silicon (M1–M4) build for macOS 10.15 and newer.
+              </p>
+              <dl class="asset-meta">
+                <div>
+                  <dt>File</dt>
+                  <dd><code>Rongyok.Desk_1.0.2_aarch64.dmg</code></dd>
+                </div>
+                <div>
+                  <dt>Size</dt>
+                  <dd>1.74 MB</dd>
+                </div>
+              </dl>
+              <a
+                class="btn btn-secondary btn-block"
+                href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_aarch64.dmg"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Download Apple Silicon .dmg
+              </a>
+            </article>
+
+            <article class="card platform-card">
+              <div class="platform-top">
+                <div class="os-badge">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path
+                      d="M16.36 12.76c-.02-2.21 1.81-3.28 1.89-3.33-1.03-1.51-2.64-1.72-3.21-1.74-1.35-.14-2.66.81-3.35.81-.7 0-1.76-.79-2.9-.77-1.48.02-2.85.87-3.61 2.2-1.55 2.69-.4 6.66 1.1 8.84.74 1.07 1.62 2.27 2.77 2.22 1.12-.04 1.54-.72 2.89-.72 1.35 0 1.73.72 2.9.69 1.2-.02 1.96-1.08 2.69-2.15.86-1.25 1.21-2.46 1.23-2.52-.03-.01-2.38-.91-2.4-3.61ZM14.17 6.32c.61-.74 1.03-1.77.91-2.8-.88.04-1.95.59-2.58 1.33-.56.65-1.06 1.7-.93 2.7.99.08 1.99-.5 2.6-1.23Z"
+                    />
+                  </svg>
+                  <span>macOS Intel</span>
+                </div>
+                <span class="pill-muted">x64</span>
+              </div>
+              <h3>Disk Image (<code>.dmg</code>)</h3>
+              <p class="platform-desc">
+                Intel x86_64 build for macOS 10.15 and newer.
+              </p>
+              <dl class="asset-meta">
+                <div>
+                  <dt>File</dt>
+                  <dd><code>Rongyok.Desk_1.0.2_x64.dmg</code></dd>
+                </div>
+                <div>
+                  <dt>Size</dt>
+                  <dd>1.83 MB</dd>
+                </div>
+              </dl>
+              <a
+                class="btn btn-secondary btn-block"
+                href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64.dmg"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Download Intel .dmg
+              </a>
+            </article>
+
+            <article class="card platform-card">
+              <div class="platform-top">
+                <div class="os-badge">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <polyline points="4 17 10 11 4 5" />
+                    <line x1="12" y1="19" x2="20" y2="19" />
+                  </svg>
+                  <span>Linux x86_64</span>
+                </div>
+                <span class="pill-muted">Flatpak</span>
+              </div>
+              <h3>Flatpak Bundle (<code>.flatpak</code>)</h3>
+              <p class="platform-desc">
+                Sandboxed desktop bundle targeting <code>org.gnome.Platform</code>
+                49 with PulseAudio and DRI enabled.
+              </p>
+              <dl class="asset-meta">
+                <div>
+                  <dt>File</dt>
+                  <dd><code>Rongyok-Desk-1.0.2-x86_64.flatpak</code></dd>
+                </div>
+                <div>
+                  <dt>Size</dt>
+                  <dd>1.10 MB</dd>
+                </div>
+              </dl>
+              <a
+                class="btn btn-secondary btn-block"
+                href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok-Desk-1.0.2-x86_64.flatpak"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Download .flatpak
+              </a>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="install">
+        <div class="container">
+          <div class="section-header">
+            <p class="section-eyebrow">Setup Steps</p>
+            <h2>Installation Instructions by OS</h2>
+            <p class="section-subtitle">
+              Choose your operating system below for verified installation steps
+              and first-launch notes for unsigned v1.0.2 builds.
+            </p>
+          </div>
+
+          <div class="install-shell card">
+            <div class="os-tabs" role="tablist" aria-label="Operating system installation tabs">
+              <button
+                type="button"
+                class="os-tab is-active"
+                role="tab"
+                id="tab-windows"
+                aria-selected="true"
+                aria-controls="panel-windows"
+                data-os="windows"
+              >
+                Windows
+              </button>
+              <button
+                type="button"
+                class="os-tab"
+                role="tab"
+                id="tab-macos"
+                aria-selected="false"
+                aria-controls="panel-macos"
+                data-os="macos"
+              >
+                macOS (10.15+)
+              </button>
+              <button
+                type="button"
+                class="os-tab"
+                role="tab"
+                id="tab-linux"
+                aria-selected="false"
+                aria-controls="panel-linux"
+                data-os="linux"
+              >
+                Linux (Flatpak)
+              </button>
+            </div>
+
+            <div
+              class="os-panel is-active"
+              role="tabpanel"
+              id="panel-windows"
+              aria-labelledby="tab-windows"
+            >
+              <ol class="install-steps">
+                <li>
+                  <strong>Download an installer:</strong> Grab
+                  <code>Rongyok.Desk_1.0.2_x64-setup.exe</code> (recommended
+                  per-user installer) or <code>Rongyok.Desk_1.0.2_x64_en-US.msi</code>
+                  from the
+                  <a
+                    href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/tag/untagged-64ea1f088167a8283cd3"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    >GitHub Release page</a
+                  >.
+                </li>
+                <li>
+                  <strong>Run the installer:</strong> The NSIS
+                  <code>.exe</code> installer automatically downloads
+                  Microsoft Edge WebView2 Runtime if it is not yet installed on
+                  your PC.
+                </li>
+                <li>
+                  <strong>First-launch SmartScreen prompt:</strong> Because
+                  release <code>v1.0.2</code> binaries are unsigned, Windows
+                  SmartScreen may warn on first run. Click
+                  <strong>More info</strong> and then <strong>Run anyway</strong>.
+                </li>
+              </ol>
+            </div>
+
+            <div
+              class="os-panel"
+              role="tabpanel"
+              id="panel-macos"
+              aria-labelledby="tab-macos"
+              hidden
+            >
+              <ol class="install-steps">
+                <li>
+                  <strong>Download the matching disk image:</strong> Choose
+                  <code>Rongyok.Desk_1.0.2_aarch64.dmg</code> for Apple Silicon
+                  (M1–M4) or <code>Rongyok.Desk_1.0.2_x64.dmg</code> for Intel
+                  Macs (macOS 10.15+).
+                </li>
+                <li>
+                  <strong>Install to Applications:</strong> Open the
+                  <code>.dmg</code> file and drag
+                  <strong>Rongyok Desk.app</strong> into your
+                  <strong>Applications</strong> folder.
+                </li>
+                <li>
+                  <strong>First-launch Gatekeeper approval:</strong> Because the
+                  app bundle is unsigned, Right-click (or Control-click)
+                  <strong>Rongyok Desk.app</strong> &rarr;
+                  <strong>Open</strong> &rarr; <strong>Open</strong> (or open
+                  <strong>System Settings &rarr; Privacy &amp; Security &rarr; Open Anyway</strong>).
+                </li>
+              </ol>
+            </div>
+
+            <div
+              class="os-panel"
+              role="tabpanel"
+              id="panel-linux"
+              aria-labelledby="tab-linux"
+              hidden
+            >
+              <ol class="install-steps">
+                <li>
+                  <strong>Ensure Flathub is configured</strong> (required to
+                  provide <code>org.gnome.Platform//49</code>):
+                  <div class="code-block">
+                    <pre><code>flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo</code></pre>
+                    <button
+                      type="button"
+                      class="copy-btn"
+                      data-copy="flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo"
+                      aria-label="Copy Flathub remote command"
+                    >
+                      <svg
+                        class="icon-copy"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                        <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                      </svg>
+                      <svg
+                        class="icon-check"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                      <span class="copy-label">Copy</span>
+                    </button>
+                  </div>
+                </li>
+                <li>
+                  <strong>Install the downloaded Flatpak bundle</strong>
+                  (<code>Rongyok-Desk-1.0.2-x86_64.flatpak</code>):
+                  <div class="code-block">
+                    <pre><code>flatpak install --user Rongyok-Desk-1.0.2-x86_64.flatpak</code></pre>
+                    <button
+                      type="button"
+                      class="copy-btn"
+                      data-copy="flatpak install --user Rongyok-Desk-1.0.2-x86_64.flatpak"
+                      aria-label="Copy Flatpak install command"
+                    >
+                      <svg
+                        class="icon-copy"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                        <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                      </svg>
+                      <svg
+                        class="icon-check"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                      <span class="copy-label">Copy</span>
+                    </button>
+                  </div>
+                </li>
+                <li>
+                  <strong>Launch Rongyok Desk</strong> from your desktop
+                  application menu or run:
+                  <div class="code-block">
+                    <pre><code>flatpak run com.rongyok.ssb</code></pre>
+                    <button
+                      type="button"
+                      class="copy-btn"
+                      data-copy="flatpak run com.rongyok.ssb"
+                      aria-label="Copy Flatpak run command"
+                    >
+                      <svg
+                        class="icon-copy"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                        <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                      </svg>
+                      <svg
+                        class="icon-check"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                      <span class="copy-label">Copy</span>
+                    </button>
+                  </div>
+                </li>
+              </ol>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section-alt" id="shortcuts">
+        <div class="container">
+          <div class="section-header">
+            <p class="section-eyebrow">Controls</p>
+            <h2>Keyboard Shortcuts &amp; Native Menu</h2>
+            <p class="section-subtitle">
+              All controls live inside the native <strong>Navigate</strong> menu
+              and capture-phase key listeners so shortcuts stay reliable across
+              pages.
+            </p>
+          </div>
+
+          <div class="shortcuts-table-wrap card">
+            <table class="shortcuts-table">
+              <thead>
+                <tr>
+                  <th scope="col">Action</th>
+                  <th scope="col">Shortcut / Menu Item</th>
+                  <th scope="col">Behavior</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Back</td>
+                  <td><kbd>Alt</kbd> + <kbd>Left</kbd></td>
+                  <td>Navigate to the previous page in history</td>
+                </tr>
+                <tr>
+                  <td>Forward</td>
+                  <td><kbd>Alt</kbd> + <kbd>Right</kbd></td>
+                  <td>Navigate forward in history</td>
+                </tr>
+                <tr>
+                  <td>Reload</td>
+                  <td>
+                    <kbd>F5</kbd> / <kbd>Ctrl</kbd> + <kbd>R</kbd> /
+                    <kbd>Cmd</kbd> + <kbd>R</kbd>
+                  </td>
+                  <td>Reload the current Rongyok page</td>
+                </tr>
+                <tr>
+                  <td>Go to rongyok.com</td>
+                  <td><kbd>Ctrl</kbd> + <kbd>H</kbd></td>
+                  <td>Return directly to <code>https://rongyok.com/</code></td>
+                </tr>
+                <tr>
+                  <td>Full screen</td>
+                  <td><kbd>F11</kbd></td>
+                  <td>Toggle native desktop fullscreen mode</td>
+                </tr>
+                <tr>
+                  <td>Open in browser</td>
+                  <td><code>Navigate &rarr; Open this page in browser</code></td>
+                  <td>Hand off the current page URL to your system browser</td>
+                </tr>
+                <tr>
+                  <td>Quit</td>
+                  <td><kbd>Ctrl</kbd> + <kbd>Q</kbd></td>
+                  <td>Save window placement and exit Rongyok Desk</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-inner">
+        <div class="footer-brand">
+          <img
+            src="./assets/icon.png"
+            alt="Rongyok Desk icon"
+            width="28"
+            height="28"
+          />
+          <div>
+            <strong>Rongyok Desk v1.0.2</strong>
+            <span>Package ID <code>com.rongyok.ssb</code> · Built with Rust &amp; Tauri v2</span>
+          </div>
+        </div>
+        <div class="footer-links">
+          <a
+            href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/tag/untagged-64ea1f088167a8283cd3"
+            target="_blank"
+            rel="noopener noreferrer"
+            >GitHub Release v1.0.2</a
+          >
+          <a
+            href="https://rongyok.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+            >rongyok.com</a
+          >
+        </div>
+      </div>
+    </footer>
+
+    <script src="./app.js" defer></script>
+  </body>
+</html>
