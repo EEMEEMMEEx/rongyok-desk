@@ -1,136 +1,167 @@
-# Rongyok Desk — a dedicated single-site browser
+<div align="center">
+  <img src="icons/icon.png" alt="Rongyok Desk icon" width="96" height="96" />
+  <h1>Rongyok Desk</h1>
+  <p><strong>A dedicated single-site desktop browser for <a href="https://rongyok.com/">rongyok.com</a></strong></p>
 
-A small desktop window that shows **https://rongyok.com/** and stays there, so the
-site feels like an app instead of a tab in a browser.
+  <p>
+    <img src="https://img.shields.io/badge/version-v1.0.2-e4b65e?style=flat-square" alt="Version v1.0.2" />
+    <img src="https://img.shields.io/badge/stack-Rust_%2B_Tauri_v2-7c5cb8?style=flat-square" alt="Rust + Tauri v2" />
+    <img src="https://img.shields.io/badge/platforms-Windows_%7C_macOS_%7C_Linux-2ea44f?style=flat-square" alt="Platforms: Windows, macOS, Linux" />
+    <a href="https://eemeemmeex.github.io/rongyok-desk/"><img src="https://img.shields.io/badge/landing_page-GitHub_Pages-1f6feb?style=flat-square" alt="Landing Page" /></a>
+  </p>
 
-## What it does
+  <p>
+    <a href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64-setup.exe"><img src="https://img.shields.io/badge/Download-Windows_.exe-0078D4?style=for-the-badge&logo=windows" alt="Download Windows .exe" /></a>
+    <a href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64_en-US.msi"><img src="https://img.shields.io/badge/Download-Windows_.msi-005A9E?style=for-the-badge&logo=windows" alt="Download Windows .msi" /></a>
+    <a href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_aarch64.dmg"><img src="https://img.shields.io/badge/Download-macOS_Apple_Silicon-111111?style=for-the-badge&logo=apple" alt="Download macOS Apple Silicon .dmg" /></a>
+    <a href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64.dmg"><img src="https://img.shields.io/badge/Download-macOS_Intel-333333?style=for-the-badge&logo=apple" alt="Download macOS Intel .dmg" /></a>
+    <a href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok-Desk-1.0.2-x86_64.flatpak"><img src="https://img.shields.io/badge/Download-Linux_.flatpak-4A86CF?style=for-the-badge&logo=linux" alt="Download Linux .flatpak" /></a>
+  </p>
+</div>
 
-- **One window, one site.** It opens straight on rongyok.com at 1280×800 with a
-  normal window title, and remembers where you signed in between launches,
-  because its cookies and storage live in a stable folder on disk.
-- **It reopens where you left it.** Move or resize the window and it comes back the
-  same size and in the same spot next time, including maximized. If the screen it
-  was on is no longer plugged in, it falls back to the middle of the main screen
-  instead of opening out of sight.
-- **Stays on the site.** Every navigation is checked before it happens. Addresses
-  on `rongyok.com` and any `*.rongyok.com` subdomain are allowed. Anything else
-  opens in your normal web browser instead, and this window stays where it was.
-  Pop-ups and `target="_blank"` links follow the same rule.
-- **Media works.** Video and audio play without needing a click first, and when a
-  video asks for full screen the whole window goes full screen (and comes back).
-- **Browser keys work.** Alt+Left / Alt+Right go back and forward, F5 or Ctrl+R
-  reloads. They are handled by the window itself, so a page can't swallow them.
-  There is also a small **Navigate** menu with the same actions, plus
-  "Open this page in browser" and F11 for full screen.
-- **No page inspector** in a normal build; it is only available in debug builds.
+Rongyok Desk opens **https://rongyok.com/** in a dedicated native window (`1280×800`, minimum `520×400`) so the site behaves like a standalone desktop app instead of a browser tab.
 
-## Building and running
+---
 
-```
+## Direct Downloads (`v1.0.2`)
+
+| Platform | Architecture | Format | Size | Direct Download |
+| --- | --- | --- | --- | --- |
+| **Windows** | `x64` | NSIS Installer (`.exe`) — *Recommended* | 1.19 MB | [Rongyok.Desk_1.0.2_x64-setup.exe](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64-setup.exe) |
+| **Windows** | `x64` | Windows Installer (`.msi`) | 1.70 MB | [Rongyok.Desk_1.0.2_x64_en-US.msi](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64_en-US.msi) |
+| **macOS** | Apple Silicon (`arm64`) | Disk Image (`.dmg`) | 1.74 MB | [Rongyok.Desk_1.0.2_aarch64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_aarch64.dmg) |
+| **macOS** | Intel (`x64`) | Disk Image (`.dmg`) | 1.83 MB | [Rongyok.Desk_1.0.2_x64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64.dmg) |
+| **Linux** | `x86_64` | Flatpak Bundle (`.flatpak`) | 1.10 MB | [Rongyok-Desk-1.0.2-x86_64.flatpak](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok-Desk-1.0.2-x86_64.flatpak) |
+
+### Preview
+
+<p align="center">
+  <img src="shots/now.png" alt="Rongyok Desk window showing rongyok.com" width="760" />
+</p>
+
+---
+
+## Installation Notes
+
+> **Unsigned Builds Notice:** The `v1.0.2` installers are currently unsigned. Windows SmartScreen and macOS Gatekeeper will show a first-run warning until code-signing certificates are configured.
+
+- **Windows (`.exe` / `.msi`)**
+  1. Download and run [Rongyok.Desk_1.0.2_x64-setup.exe](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64-setup.exe) (per-user installer; automatically downloads Microsoft Edge WebView2 Runtime if missing) or [Rongyok.Desk_1.0.2_x64_en-US.msi](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64_en-US.msi).
+  2. If **Windows SmartScreen** appears on first launch, click **More info** → **Run anyway**.
+
+- **macOS (`10.15+`)**
+  1. Download [Rongyok.Desk_1.0.2_aarch64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_aarch64.dmg) (Apple Silicon) or [Rongyok.Desk_1.0.2_x64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/untagged-64ea1f088167a8283cd3/Rongyok.Desk_1.0.2_x64.dmg) (Intel).
+  2. Open the `.dmg` and drag **Rongyok Desk.app** into **Applications**.
+  3. On first launch, bypass **macOS Gatekeeper** by **Control-clicking (right-clicking)** the app → **Open** → **Open** (or allow it via **System Settings → Privacy & Security → Open Anyway**).
+
+- **Linux (`x86_64` Flatpak)**
+  ```bash
+  flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+  flatpak install --user Rongyok-Desk-1.0.2-x86_64.flatpak
+  flatpak run com.rongyok.ssb
+  ```
+
+---
+
+## Key Features
+
+- **One Window, One Site** — Opens directly at `https://rongyok.com/` in a clean `1280×800` native window with persistent cookies, cache, and `localStorage` stored on disk (`<app_local_data_dir>/webview`; `~/.var/app/com.rongyok.ssb` on Flatpak) so logins survive restarts.
+- **Strict Domain Isolation** — Every navigation (`on_navigation`) and pop-up / `target="_blank"` request (`on_new_window`) is checked before loading. Only `http://` and `https://` URLs on `rongyok.com` or `*.rongyok.com` (plus internal `about:`, `data:`, `blob:` webview URLs) load inside the window.
+- **External Link Handoff** — Links to other domains, lookalike hosts, or external schemes (`mailto:`, `tel:`, `file:`) automatically open in your default system browser (`ShellExecuteW` on Windows, `open` on macOS, `xdg-open` on Linux) while keeping Rongyok Desk on the site.
+- **Remembered Window Placement** — Saves `x y width height maximized` to `window-placement.txt` on close/destroy. Validates usable bounds (`520..20000 × 400..20000`) and checks `available_monitors()` on startup, falling back to a centered window on the primary monitor if a display was disconnected.
+- **HTML5 Media & Fullscreen** — Enables autoplay without prior gesture (`--autoplay-policy=no-user-gesture-required`) and disables background throttling. On Windows WebView2, `ContainsFullScreenElementChanged` syncs HTML5 video fullscreen with native window fullscreen; Flatpak enables `--socket=pulseaudio` and `--device=dri`.
+- **Resilient Keyboard Shortcuts & Menu** — Capture-phase JS listeners prevent page scripts from swallowing navigation keys, paired with a native **Navigate** menu.
+- **Production Hygiene** — DevTools are enabled only in debug builds (`cfg!(debug_assertions)`) and disabled in release builds.
+
+### Keyboard Shortcuts & Menu
+
+| Action | Shortcut | Notes |
+| --- | --- | --- |
+| Back | `Alt+Left` | Handled at capture phase + **Navigate** menu |
+| Forward | `Alt+Right` | Handled at capture phase + **Navigate** menu |
+| Reload | `F5` / `Ctrl+R` / `Cmd+R` | Reloads current page |
+| Go to `rongyok.com` | `Ctrl+H` | Returns to `START_URL` (`https://rongyok.com/`) |
+| Full screen | `F11` | Toggles native window fullscreen |
+| Open this page in browser | Menu only | Opens current URL in system browser |
+| Quit | `Ctrl+Q` | Closes the application |
+
+---
+
+## Developer Guide
+
+### Building & Running
+
+Requires Rust (`rust-version = "1.90"` in `Cargo.toml`) and platform WebView prerequisites (WebView2 on Windows, WebKitGTK on Linux, Xcode Command Line Tools on macOS):
+
+```bash
 cargo build --release
+```
+
+On Windows, run the compiled binary directly:
+
+```powershell
 target\release\rongyok-ssb.exe
 ```
 
-## Building the installers
+### Building Installers
 
-The bundle settings live in `tauri.conf.json`, under `bundle`. Four installer
-formats are configured:
+Bundle configuration lives in `tauri.conf.json` (`identifier: "com.rongyok.ssb"`, targets: `nsis`, `msi`, `dmg`):
 
-| Format | Made on | File |
-| --- | --- | --- |
-| NSIS installer | Windows | `Rongyok Desk_1.0.2_x64-setup.exe` |
-| MSI installer | Windows | `Rongyok Desk_1.0.2_x64_en-US.msi` |
-| Disk image | macOS | `Rongyok Desk_1.0.2_<arch>.dmg` |
-| Flatpak | Linux | `Rongyok-Desk-1.0.2-x86_64.flatpak` |
-
-The Windows and macOS ones come from the Tauri command line tool:
-
-```
+```bash
 cargo install tauri-cli --version "^2" --locked
 cargo tauri build
 ```
 
-Each format has to be built on the system it is for, which is why the automated
-build uses one machine per system. The Flatpak is separate because Flatpak is
-its own packaging system: see below.
+Each format must be built on its target OS. The icon set in `icons/` (`icon.ico` for Windows, `icon.icns` for macOS, and PNGs for Linux/window icon) is generated by `tools/make_icon` and can be regenerated with:
 
-The icons in `icons/` are all referenced by `tauri.conf.json`, and each one is
-needed: `icon.ico` for Windows, `icon.icns` for macOS, and the PNGs for Linux
-and for the window itself. `tools/make_icon` draws all of them in the same
-style, so they can be regenerated at any time with:
-
-```
+```bash
 cargo run --manifest-path tools/make_icon/Cargo.toml
 ```
 
-## Building the Flatpak
+### Building the Flatpak (Linux)
 
-The Flatpak lives in `flatpak/`: the manifest `com.rongyok.ssb.yml` plus a menu
-entry and the metadata software centres read. On a Linux machine with `flatpak`
-and `flatpak-builder` installed:
+The Flatpak configuration lives in `flatpak/` (`com.rongyok.ssb.yml`, `com.rongyok.ssb.desktop`, `com.rongyok.ssb.metainfo.xml`). On Linux with `flatpak` and `flatpak-builder` installed:
 
-```
+```bash
 ./flatpak/build-flatpak.sh
 ```
 
-That writes `dist/flatpak/Rongyok-Desk-<version>-x86_64.flatpak`, which installs with:
+The script checks for required tools and the `org.gnome.Platform//49`, `org.gnome.Sdk//49`, and `org.freedesktop.Sdk.Extension.rust-stable//25.08` runtimes, then writes `dist/flatpak/Rongyok-Desk-<version>-x86_64.flatpak`:
 
-```
+```bash
 flatpak install --user dist/flatpak/Rongyok-Desk-1.0.2-x86_64.flatpak
 flatpak run com.rongyok.ssb
 ```
 
-The script checks for the tools and the GNOME runtime and SDK it builds
-against, and tells you the command to install anything missing.
+### CI/CD & GitHub Pages
 
-## Automatic releases
+- **Release Workflow (`.github/workflows/release.yml`):** Builds Windows (`.exe` + `.msi`), macOS (`aarch64` + `x86_64` `.dmg` on `macos-15`), and Linux (`.flatpak` on `ubuntu-24.04`). Pushing a `v*` tag attaches all 5 artifacts to a draft release; `workflow_dispatch` builds downloadable artifacts without publishing. Both root and nested `app/` layouts are supported automatically via `tauri.conf.json` discovery.
+- **GitHub Pages (`.github/workflows/pages.yml`):** Publishes the static landing page in `docs/` (`https://eemeemmeex.github.io/rongyok-desk/`) on pushes to `main`.
 
-`.github/workflows/release.yml` builds all four installers on GitHub's machines:
-Windows for the `.exe` and `.msi`, an Apple Silicon and an Intel Mac for the
-`.dmg`, and Ubuntu for the `.flatpak`. Push a tag such as `v1.0.0` to publish a
-draft release with all four attached, or run the workflow by hand from the
-Actions tab to get them as downloads without publishing.
+### Screenshots (Windows Diagnostic CLI)
 
-The workflow finds the folder holding `tauri.conf.json` by itself, so it works
-whether `app/` is the top of your repository or one level down.
-
-## Taking a picture of the window
-
-```
+```powershell
 target\release\rongyok-ssb.exe --screenshot shots\now.png
 ```
 
-This starts the window **without taking focus** (and on Windows behind other
-windows), waits for the page to paint, saves a PNG, and exits. It exits with code
-0 when it saved a picture with visible content, and 1 when it could only produce a
-blank one. The `--screenshot=<file>` form works too.
+Starts the window **without taking focus** (positioned behind other windows on Windows), waits for the page to paint, writes a PNG, and exits (`0` if visible non-blank content was captured, `1` if blank). The `--screenshot=<file>` flag format is also supported.
 
-## Tests
+### Tests
 
-```
+```bash
 cargo test
 ```
 
-Six tests cover the address rules: the site and its subdomains pass, and other
-sites, lookalikes such as `rongyok.com.evil.example` or `fakerongyok.com`, and
-`mailto:` links are blocked. Four more cover the remembered window spot: it
-round-trips, a maximized window is noted, a damaged note is ignored, and an
-impossible size is refused.
+10 unit tests in `src/main.rs` verify:
+- **Address rules (6 tests):** `rongyok.com` and `*.rongyok.com` subdomains pass; internal `about:`/`data:`/`blob:` pages pass; external sites, lookalike domains (`rongyok.com.evil.example`, `fakerongyok.com`, `rongyok.com@evil.example`), and `mailto:` links are blocked.
+- **Window placement (4 tests):** valid coordinates round-trip, maximized state is preserved, malformed placement files are ignored, and out-of-bounds sizes are refused.
 
-## Notes and limits
+---
 
-- The picture option uses the Windows webview's own capture call. On macOS and
-  Linux that call does not exist, so `--screenshot` cannot produce a picture there.
-- `https://rongyok.com/` is behind Cloudflare, which answers some networks and
-  regions with a "you have been blocked" page. The app shows whatever the site
-  returns; it does not try to get around that.
-- Only files in this folder belong to the app. `tools/make_icon` is a one-off
-  helper that draws the icon set in `icons/`.
-- The installers are unsigned. Windows SmartScreen and macOS Gatekeeper will warn
-  the first time someone opens them until the packages are code signed, which
-  needs a certificate from each platform's authority. No certificate is included
-  here, and the workflow does not pass any signing secrets; add them to the
-  `tauri-action` steps when you have them.
-- The Flatpak builds against the GNOME 46 runtime. Change `runtime-version` in
-  the manifest (and the same version in the workflow) to build against a newer
-  one.
+## Notes & Limits
+
+- **Screenshot support:** `--screenshot` relies on the Windows WebView2 capture API and cannot capture pictures on macOS or Linux.
+- **Cloudflare behavior:** `https://rongyok.com/` sits behind Cloudflare, which may challenge or block certain networks/regions; Rongyok Desk displays whatever the site returns without attempting to bypass it.
+- **Code signing:** No signing certificates or secrets are included in the repository or CI workflow. Add platform signing secrets to the `tauri-action` steps in `.github/workflows/release.yml` to eliminate SmartScreen/Gatekeeper warnings.
+- **Project scope:** `tools/make_icon` is a standalone helper used only to generate the icon assets in `icons/`.
+- **Flatpak runtime:** Currently targets GNOME `49` with `org.freedesktop.Sdk.Extension.rust-stable//25.08` (update `runtime-version` in `flatpak/com.rongyok.ssb.yml`, `RUNTIME_VERSION` in `flatpak/build-flatpak.sh`, and `.github/workflows/release.yml` together when upgrading runtimes).
