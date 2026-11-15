@@ -85,8 +85,3 @@ Rongyok Desk opens **https://rongyok.com/** in a dedicated native window (`1280Ã
 | Open this page in browser | Menu only | Opens current URL in system browser |
 | Quit | `Ctrl+Q` | Closes the application |
 
----
-
-## Developer Guide & Documentation
-
-Build instructions, Flatpak packaging, CI/CD workflows, testing, and technical notes are maintained in the **[GitHub Wiki](https://github.com/EEMEEMMEEx/rongyok-desk/wiki)**.
