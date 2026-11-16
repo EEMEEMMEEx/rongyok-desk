@@ -19,7 +19,7 @@ name: Release
 # Either layout works: every job first finds the folder holding tauri.conf.json
 # and builds there, so it does not matter how deep the app sits.
 
-# Build jobs compile platform bundles only (uploadUpdaterJson: false, no per-job
+# Build jobs compile platform bundles only (includeUpdaterJson: false, no per-job
 # GitHub Release creation) to avoid parallel draft races and latest.json
 # overwrites. The final `publish-release` job creates/publishes the release and
 # uploads all installers + latest.json atomically on tag pushes.
@@ -70,10 +70,12 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           # Build bundles only; `publish-release` creates the release & latest.json.
           projectPath: ${{ steps.app.outputs.path }}
-          uploadUpdaterJson: false
+          includeUpdaterJson: false
           args: --target x86_64-pc-windows-msvc
 
       - name: Verify Windows bundles exist
@@ -82,6 +84,10 @@ jobs:
           set -euo pipefail
           compgen -G "${{ steps.app.outputs.path }}/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe" >/dev/null
           compgen -G "${{ steps.app.outputs.path }}/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi" >/dev/null
+          if node -e 'const fs=require("fs"), c=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.exit(c.bundle && c.bundle.createUpdaterArtifacts ? 0 : 1)' "${{ steps.app.outputs.path }}/tauri.conf.json"; then
+            compgen -G "${{ steps.app.outputs.path }}/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe.sig" >/dev/null
+            compgen -G "${{ steps.app.outputs.path }}/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi.sig" >/dev/null
+          fi
 
       # Keep installers (and any .sig files when updater signing is enabled).
       - name: Upload the installers
@@ -142,16 +148,23 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: ${{ steps.app.outputs.path }}
-          uploadUpdaterJson: false
-          args: --target ${{ matrix.target }}
+          includeUpdaterJson: false
+          # Include `app` so createUpdaterArtifacts: true produces .app.tar.gz + .sig.
+          args: --target ${{ matrix.target }} --bundles dmg,app
 
       - name: Verify macOS bundle exists
         shell: bash
         run: |
           set -euo pipefail
           compgen -G "${{ steps.app.outputs.path }}/target/${{ matrix.target }}/release/bundle/dmg/*.dmg" >/dev/null
+          if node -e 'const fs=require("fs"), c=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.exit(c.bundle && c.bundle.createUpdaterArtifacts ? 0 : 1)' "${{ steps.app.outputs.path }}/tauri.conf.json"; then
+            compgen -G "${{ steps.app.outputs.path }}/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz" >/dev/null
+            compgen -G "${{ steps.app.outputs.path }}/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig" >/dev/null
+          fi
 
       - name: Upload the disk image
         uses: actions/upload-artifact@v4
@@ -239,7 +252,7 @@ jobs:
 
           tag = os.environ["TAG"]
           repo = os.environ["REPO"]
-          tag_version = tag.lstrip("v")
+          tag_version = tag.removeprefix("v")
 
           conf_files = [
               p for p in pathlib.Path(".").rglob("tauri.conf.json")
@@ -253,6 +266,7 @@ jobs:
               raise SystemExit(
                   f"Tag version ({tag_version}) does not match tauri.conf.json ({conf_version})"
               )
+          updater_enabled = bool(conf.get("bundle", {}).get("createUpdaterArtifacts"))
 
           artifacts_root = pathlib.Path("release-artifacts")
           stage_dir = pathlib.Path("dist-release")
@@ -277,25 +291,31 @@ jobs:
               shutil.copy2(src, stage_dir / name)
               return name
 
+          def read_sig(sig_path: pathlib.Path) -> str:
+              sig_text = sig_path.read_text(encoding="utf-8").strip()
+              if not sig_text:
+                  raise SystemExit(f"Empty updater signature file: {sig_path}")
+              return sig_text
+
           base_url = f"https://github.com/{repo}/releases/download/{tag}"
 
           exe_src = find_single("windows-installers", ".exe")
           exe_name = stage_file(exe_src)
-          exe_sig = find_single("windows-installers", ".exe.sig", required=False)
+          exe_sig = find_single("windows-installers", ".exe.sig", required=updater_enabled)
 
           msi_src = find_single("windows-installers", ".msi")
           msi_name = stage_file(msi_src)
-          msi_sig = find_single("windows-installers", ".msi.sig", required=False)
+          msi_sig = find_single("windows-installers", ".msi.sig", required=updater_enabled)
 
           mac_arm_dmg = find_single("macos-dmg-aarch64", ".dmg")
           mac_arm_name = stage_file(mac_arm_dmg)
-          mac_arm_tar = find_single("macos-dmg-aarch64", ".app.tar.gz", required=False)
-          mac_arm_sig = find_single("macos-dmg-aarch64", ".app.tar.gz.sig", required=False)
+          mac_arm_tar = find_single("macos-dmg-aarch64", ".app.tar.gz", required=updater_enabled)
+          mac_arm_sig = find_single("macos-dmg-aarch64", ".app.tar.gz.sig", required=updater_enabled)
 
           mac_x64_dmg = find_single("macos-dmg-x86_64", ".dmg")
           mac_x64_name = stage_file(mac_x64_dmg)
-          mac_x64_tar = find_single("macos-dmg-x86_64", ".app.tar.gz", required=False)
-          mac_x64_sig = find_single("macos-dmg-x86_64", ".app.tar.gz.sig", required=False)
+          mac_x64_tar = find_single("macos-dmg-x86_64", ".app.tar.gz", required=updater_enabled)
+          mac_x64_sig = find_single("macos-dmg-x86_64", ".app.tar.gz.sig", required=updater_enabled)
 
           flatpak_src = find_single("linux-flatpak", ".flatpak")
           flatpak_name = stage_file(flatpak_src)
@@ -303,30 +323,28 @@ jobs:
           platforms = {}
           if exe_sig:
               stage_file(exe_sig)
-              sig_text = exe_sig.read_text(encoding="utf-8").strip()
-              entry = {"url": f"{base_url}/{exe_name}", "signature": sig_text}
+              entry = {"url": f"{base_url}/{exe_name}", "signature": read_sig(exe_sig)}
               platforms["windows-x86_64-nsis"] = entry
               platforms["windows-x86_64"] = entry
           if msi_sig:
               stage_file(msi_sig)
-              sig_text = msi_sig.read_text(encoding="utf-8").strip()
               platforms["windows-x86_64-msi"] = {
                   "url": f"{base_url}/{msi_name}",
-                  "signature": sig_text,
+                  "signature": read_sig(msi_sig),
               }
           if mac_arm_tar and mac_arm_sig:
               tar_name = stage_file(mac_arm_tar, f"Rongyok.Desk_{conf_version}_aarch64.app.tar.gz")
               stage_file(mac_arm_sig, f"{tar_name}.sig")
               platforms["darwin-aarch64"] = {
                   "url": f"{base_url}/{tar_name}",
-                  "signature": mac_arm_sig.read_text(encoding="utf-8").strip(),
+                  "signature": read_sig(mac_arm_sig),
               }
           if mac_x64_tar and mac_x64_sig:
               tar_name = stage_file(mac_x64_tar, f"Rongyok.Desk_{conf_version}_x64.app.tar.gz")
               stage_file(mac_x64_sig, f"{tar_name}.sig")
               platforms["darwin-x86_64"] = {
                   "url": f"{base_url}/{tar_name}",
-                  "signature": mac_x64_sig.read_text(encoding="utf-8").strip(),
+                  "signature": read_sig(mac_x64_sig),
               }
 
           manifest = {

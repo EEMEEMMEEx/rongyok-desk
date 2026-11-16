@@ -6,15 +6,18 @@
 // leave the site open in the person's normal browser instead, and the usual
 // browser keys (Back, Forward, Reload) keep working.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::utils::config::BackgroundThrottlingPolicy;
 use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+#[cfg(target_os = "windows")]
+use tauri_plugin_updater::UpdaterExt;
 
 /// Authoritative app identity and version metadata compiled from Cargo.
 const APP_NAME: &str = "Rongyok Desk";
@@ -27,9 +30,17 @@ const START_URL: &str = "https://rongyok.com/";
 const WINDOW_LABEL: &str = "main";
 /// Marker file beside window-placement.txt tracking first-launch onboarding dismissal.
 const ONBOARDING_STATE_FILE: &str = "onboarding-seen.txt";
-/// Custom-scheme navigation intercepted by Rust to persist onboarding dismissal immediately.
+/// Custom-scheme navigation intercepted by Rust to persist onboarding dismissal or run verified modal actions.
 const ONBOARDING_DISMISS_SCHEME: &str = "rongyok-desk";
 const ONBOARDING_DISMISS_HOST: &str = "onboarding-dismissed";
+const UPDATE_MANIFEST_URL: &str =
+    "https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/latest.json";
+const UPDATE_REPO_PREFIX: &str = "/EEMEEMMEEx/rongyok-desk/";
+const UPDATE_ACTION_OPEN_DOWNLOAD: &str = "open-update-download";
+const UPDATE_ACTION_CHECK: &str = "check-updates";
+const UPDATE_NOTES_MAX_CHARS: usize = 600;
+const MAX_MANIFEST_BYTES: usize = 1024 * 1024;
+const MAX_MANIFEST_REDIRECTS: usize = 5;
 
 /// Build the diagnostic version string copied from the About dialog.
 fn version_info_string() -> String {
@@ -889,6 +900,9 @@ const SHORTCUT_SCRIPT: &str = r#"
     if (window.__rongyokCloseAbout) {
       try { window.__rongyokCloseAbout(); } catch (_) {}
     }
+    if (window.__rongyokCloseUpdate) {
+      try { window.__rongyokCloseUpdate(); } catch (_) {}
+    }
     if (isOnboarding) {
       onboardingActive = true;
     }
@@ -1418,6 +1432,9 @@ fn about_script() -> String {
     if (window.__rongyokCloseShortcuts) {
       try { window.__rongyokCloseShortcuts(); } catch (_) {}
     }
+    if (window.__rongyokCloseUpdate) {
+      try { window.__rongyokCloseUpdate(); } catch (_) {}
+    }
     var parts = ensureUi();
     if (!parts) {
       if (document.readyState === 'loading') {
@@ -1476,6 +1493,1402 @@ fn about_script() -> String {
         .replace("__DESCRIPTION__", &description)
         .replace("__SITE_URL__", &site_url)
         .replace("__COPYRIGHT__", APP_COPYRIGHT_JS)
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+struct ReleasePlatformEntry {
+    url: String,
+    #[serde(default)]
+    #[allow(dead_code)]
+    signature: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+struct LatestReleaseManifest {
+    version: String,
+    #[serde(default)]
+    notes: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub_date: Option<String>,
+    #[serde(default)]
+    platforms: HashMap<String, ReleasePlatformEntry>,
+    #[serde(default)]
+    downloads: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateModalPayload {
+    state: &'static str,
+    current_version: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    notes: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    install_mode: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    progress_percent: Option<u8>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    background_progress: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    defer_if_busy: bool,
+}
+
+#[derive(Clone)]
+enum PendingUpdateAction {
+    #[cfg(target_os = "windows")]
+    InApp {
+        update: Box<tauri_plugin_updater::Update>,
+        fallback_url: Option<Url>,
+    },
+    Browser {
+        url: Url,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CheckStart {
+    Spawn,
+    Promoted,
+    AlreadyRunning,
+}
+
+#[derive(Default)]
+struct CheckSyncState {
+    in_flight: bool,
+    promote_interactive: bool,
+}
+
+struct UpdateController {
+    nonce: String,
+    check_sync: Mutex<CheckSyncState>,
+    install_in_flight: AtomicBool,
+    install_progress: Mutex<Option<(String, u8)>>,
+    pending: Mutex<Option<PendingUpdateAction>>,
+}
+
+impl UpdateController {
+    fn new() -> Self {
+        Self {
+            nonce: generate_update_nonce(),
+            check_sync: Mutex::new(CheckSyncState::default()),
+            install_in_flight: AtomicBool::new(false),
+            install_progress: Mutex::new(None),
+            pending: Mutex::new(None),
+        }
+    }
+
+    fn set_install_progress(&self, progress: Option<(String, u8)>) {
+        if let Ok(mut guard) = self.install_progress.lock() {
+            *guard = progress;
+        }
+    }
+
+    fn get_install_progress(&self) -> Option<(String, u8)> {
+        self.install_progress.lock().ok().and_then(|guard| guard.clone())
+    }
+
+    fn begin_check(&self, silent: bool) -> CheckStart {
+        let Ok(mut state) = self.check_sync.lock() else {
+            return CheckStart::AlreadyRunning;
+        };
+        if !state.in_flight {
+            state.in_flight = true;
+            state.promote_interactive = false;
+            return CheckStart::Spawn;
+        }
+        if !silent {
+            state.promote_interactive = true;
+            return CheckStart::Promoted;
+        }
+        CheckStart::AlreadyRunning
+    }
+
+    /// Complete an in-flight check atomically and return `effective_silent`.
+    fn finish_check(&self, initial_silent: bool) -> bool {
+        let Ok(mut state) = self.check_sync.lock() else {
+            return initial_silent;
+        };
+        let promoted = state.promote_interactive;
+        state.promote_interactive = false;
+        state.in_flight = false;
+        initial_silent && !promoted
+    }
+
+    fn set_pending(&self, action: Option<PendingUpdateAction>) {
+        if let Ok(mut guard) = self.pending.lock() {
+            *guard = action;
+        }
+    }
+
+    fn get_pending(&self) -> Option<PendingUpdateAction> {
+        self.pending.lock().ok().and_then(|guard| guard.clone())
+    }
+}
+
+/// Generate a per-launch cryptographic hex nonce used to guard custom-scheme update actions.
+fn generate_update_nonce() -> String {
+    let mut bytes = [0u8; 16];
+    if getrandom::fill(&mut bytes).is_err() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        bytes = nanos.to_le_bytes();
+    }
+    let mut hex = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        use std::fmt::Write;
+        let _ = write!(&mut hex, "{byte:02x}");
+    }
+    hex
+}
+
+fn constant_time_eq(a: &str, b: &str) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.bytes()
+        .zip(b.bytes())
+        .fold(0u8, |acc, (left, right)| acc | (left ^ right))
+        == 0
+}
+
+/// Verify that a `rongyok-desk://` update action carries the active launch nonce.
+fn parse_update_action_url(url: &Url, expected_token: &str) -> Option<&'static str> {
+    if url.scheme() != ONBOARDING_DISMISS_SCHEME || expected_token.is_empty() {
+        return None;
+    }
+    let action = match url.host_str() {
+        Some(UPDATE_ACTION_OPEN_DOWNLOAD) => UPDATE_ACTION_OPEN_DOWNLOAD,
+        Some(UPDATE_ACTION_CHECK) => UPDATE_ACTION_CHECK,
+        _ => return None,
+    };
+    let token = url
+        .query_pairs()
+        .find(|(key, _)| key == "token")
+        .map(|(_, value)| value)?;
+    constant_time_eq(token.as_ref(), expected_token).then_some(action)
+}
+
+/// Strict allowlist for updater and browser-download URLs parsed from `latest.json`.
+fn is_allowed_update_url(url: &Url) -> bool {
+    if url.scheme() != "https" {
+        return false;
+    }
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    if !host.eq_ignore_ascii_case("github.com") {
+        return false;
+    }
+    if url.port().is_some() || !url.username().is_empty() || url.password().is_some() {
+        return false;
+    }
+    url.path().starts_with(UPDATE_REPO_PREFIX)
+}
+
+fn parse_allowed_update_url(raw: &str) -> Option<Url> {
+    Url::parse(raw.trim()).ok().filter(is_allowed_update_url)
+}
+
+/// Allowlist for HTTPS redirect hops when fetching `latest.json`.
+fn is_allowed_manifest_hop(url: &Url) -> bool {
+    if url.scheme() != "https"
+        || url.port().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return false;
+    }
+    let Some(host) = url.host_str().map(|h| h.to_ascii_lowercase()) else {
+        return false;
+    };
+    if host == "github.com" {
+        return url.path().starts_with(UPDATE_REPO_PREFIX);
+    }
+    matches!(
+        host.as_str(),
+        "release-assets.githubusercontent.com"
+            | "objects.githubusercontent.com"
+            | "github-releases.githubusercontent.com"
+    )
+}
+
+fn parse_manifest_bytes(bytes: &[u8]) -> Result<LatestReleaseManifest, ()> {
+    if bytes.len() > MAX_MANIFEST_BYTES {
+        return Err(());
+    }
+    serde_json::from_slice::<LatestReleaseManifest>(bytes).map_err(|_| ())
+}
+
+fn parse_semver_version(raw: &str) -> Option<semver::Version> {
+    let trimmed = raw.trim();
+    let normalized = trimmed
+        .strip_prefix('v')
+        .or_else(|| trimmed.strip_prefix('V'))
+        .unwrap_or(trimmed);
+    semver::Version::parse(normalized).ok()
+}
+
+fn is_newer_version(current_raw: &str, remote_raw: &str) -> bool {
+    match (
+        parse_semver_version(current_raw),
+        parse_semver_version(remote_raw),
+    ) {
+        (Some(current), Some(remote)) => remote > current,
+        _ => false,
+    }
+}
+
+fn truncate_plain_notes(raw: Option<&str>, max_chars: usize) -> Option<String> {
+    let text = raw?.trim();
+    if text.is_empty() {
+        return None;
+    }
+    if text.chars().count() <= max_chars {
+        return Some(text.to_string());
+    }
+    let clipped: String = text.chars().take(max_chars).collect();
+    Some(format!("{}...", clipped.trim_end()))
+}
+
+#[cfg(target_os = "windows")]
+fn is_msi_install() -> bool {
+    matches!(
+        tauri::utils::platform::bundle_type(),
+        Some(tauri::utils::config::BundleType::Msi)
+    )
+}
+
+#[cfg(not(target_os = "windows"))]
+fn is_msi_install() -> bool {
+    false
+}
+
+/// Pick the best allowlisted download URL for the given OS/arch/installer type.
+fn select_download_url(
+    manifest: &LatestReleaseManifest,
+    os: &str,
+    arch: &str,
+    is_msi: bool,
+) -> Option<Url> {
+    let download_keys: &[&str] = match (os, arch, is_msi) {
+        ("windows", _, true) => &["windows-x86_64-msi", "windows-x86_64-nsis"],
+        ("windows", _, false) => &["windows-x86_64-nsis", "windows-x86_64-msi"],
+        ("macos", "aarch64", _) => &["darwin-aarch64-dmg"],
+        ("macos", _, _) => &["darwin-x86_64-dmg"],
+        ("linux", _, _) => &["linux-x86_64-flatpak"],
+        _ => &[],
+    };
+    for key in download_keys {
+        if let Some(raw) = manifest.downloads.get(*key) {
+            if let Some(url) = parse_allowed_update_url(raw) {
+                return Some(url);
+            }
+        }
+    }
+
+    let platform_keys: &[&str] = match (os, arch, is_msi) {
+        ("windows", _, true) => &[
+            "windows-x86_64-msi",
+            "windows-x86_64-nsis",
+            "windows-x86_64",
+        ],
+        ("windows", _, false) => &[
+            "windows-x86_64-nsis",
+            "windows-x86_64",
+            "windows-x86_64-msi",
+        ],
+        ("macos", "aarch64", _) => &["darwin-aarch64"],
+        ("macos", _, _) => &["darwin-x86_64"],
+        ("linux", _, _) => &["linux-x86_64"],
+        _ => &[],
+    };
+    for key in platform_keys {
+        if let Some(entry) = manifest.platforms.get(*key) {
+            if let Some(url) = parse_allowed_update_url(&entry.url) {
+                return Some(url);
+            }
+        }
+    }
+
+    None
+}
+
+fn eval_update_modal(app: &AppHandle, payload: &UpdateModalPayload) {
+    let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
+        return;
+    };
+    let Ok(json) = serde_json::to_string(payload) else {
+        return;
+    };
+    let safe_json = json
+        .replace('\u{2028}', r"\u2028")
+        .replace('\u{2029}', r"\u2029")
+        .replace("</", r"<\/");
+    let _ = window.eval(format!(
+        "window.__rongyokShowUpdate && window.__rongyokShowUpdate({safe_json});"
+    ));
+}
+
+fn close_update_modal(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
+        let _ = window.eval("window.__rongyokCloseUpdate && window.__rongyokCloseUpdate();");
+    }
+}
+
+struct CheckGuard {
+    state: Arc<UpdateController>,
+    active: bool,
+}
+
+impl CheckGuard {
+    fn new(state: Arc<UpdateController>) -> Self {
+        Self {
+            state,
+            active: true,
+        }
+    }
+
+    fn finish(&mut self, initial_silent: bool) -> bool {
+        self.active = false;
+        self.state.finish_check(initial_silent)
+    }
+}
+
+impl Drop for CheckGuard {
+    fn drop(&mut self) {
+        if self.active {
+            let _ = self.state.finish_check(true);
+        }
+    }
+}
+
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+struct InstallGuard(Arc<UpdateController>);
+
+impl Drop for InstallGuard {
+    fn drop(&mut self) {
+        self.0.set_install_progress(None);
+        self.0.install_in_flight.store(false, Ordering::Release);
+    }
+}
+
+enum ResolvedCheck {
+    Available {
+        version: String,
+        notes: Option<String>,
+        install_mode: &'static str,
+        pending: PendingUpdateAction,
+    },
+    UpToDate {
+        version: Option<String>,
+    },
+    Error {
+        version: Option<String>,
+        message: String,
+    },
+}
+
+fn manifest_redirect_policy() -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(|attempt| {
+        if attempt.previous().len() > MAX_MANIFEST_REDIRECTS {
+            return attempt.error("too many manifest redirects");
+        }
+        if is_allowed_manifest_hop(attempt.url()) {
+            attempt.follow()
+        } else {
+            attempt.error("blocked untrusted manifest redirect")
+        }
+    })
+}
+
+async fn fetch_latest_manifest() -> Result<LatestReleaseManifest, ()> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .user_agent(format!("RongyokDesk/{APP_VERSION}"))
+        .redirect(manifest_redirect_policy())
+        .build()
+        .map_err(|_| ())?;
+
+    let mut response = client
+        .get(UPDATE_MANIFEST_URL)
+        .send()
+        .await
+        .map_err(|_| ())?
+        .error_for_status()
+        .map_err(|_| ())?;
+
+    if let Some(len) = response.content_length() {
+        if len > MAX_MANIFEST_BYTES as u64 {
+            return Err(());
+        }
+    }
+
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|_| ())? {
+        if body.len().saturating_add(chunk.len()) > MAX_MANIFEST_BYTES {
+            return Err(());
+        }
+        body.extend_from_slice(&chunk);
+    }
+
+    parse_manifest_bytes(&body)
+}
+
+async fn check_manifest_phase1() -> ResolvedCheck {
+    match fetch_latest_manifest().await {
+        Ok(manifest) => {
+            if !is_newer_version(APP_VERSION, &manifest.version) {
+                return ResolvedCheck::UpToDate {
+                    version: Some(manifest.version),
+                };
+            }
+
+            let Some(url) = select_download_url(
+                &manifest,
+                std::env::consts::OS,
+                std::env::consts::ARCH,
+                is_msi_install(),
+            ) else {
+                return ResolvedCheck::Error {
+                    version: Some(manifest.version),
+                    message:
+                        "A newer version exists, but no verified download matched this platform."
+                            .to_string(),
+                };
+            };
+
+            ResolvedCheck::Available {
+                version: manifest.version,
+                notes: truncate_plain_notes(manifest.notes.as_deref(), UPDATE_NOTES_MAX_CHARS),
+                install_mode: "browser",
+                pending: PendingUpdateAction::Browser { url },
+            }
+        }
+        Err(()) => ResolvedCheck::Error {
+            version: None,
+            message: "Could not check for updates right now. Please check your connection and try again."
+                .to_string(),
+        },
+    }
+}
+
+fn trigger_update_check(
+    app: AppHandle,
+    state: Arc<UpdateController>,
+    onboarding_pending: Arc<AtomicBool>,
+    silent: bool,
+) {
+    if state.install_in_flight.load(Ordering::Acquire) {
+        if !silent {
+            let (version, pct) = match state.get_install_progress() {
+                Some((ver, p)) => (Some(ver), p),
+                None => (None, 0),
+            };
+            eval_update_modal(
+                &app,
+                &UpdateModalPayload {
+                    state: if pct >= 100 { "installing" } else { "downloading" },
+                    current_version: APP_VERSION,
+                    version,
+                    notes: None,
+                    install_mode: None,
+                    message: None,
+                    progress_percent: Some(pct),
+                    background_progress: false,
+                    defer_if_busy: false,
+                },
+            );
+        }
+        return;
+    }
+
+    match state.begin_check(silent) {
+        CheckStart::Spawn => {}
+        CheckStart::Promoted => {
+            eval_update_modal(
+                &app,
+                &UpdateModalPayload {
+                    state: "loading",
+                    current_version: APP_VERSION,
+                    version: None,
+                    notes: None,
+                    install_mode: None,
+                    message: None,
+                    progress_percent: None,
+                    background_progress: false,
+                    defer_if_busy: false,
+                },
+            );
+            return;
+        }
+        CheckStart::AlreadyRunning => return,
+    }
+
+    if !silent {
+        eval_update_modal(
+            &app,
+            &UpdateModalPayload {
+                state: "loading",
+                current_version: APP_VERSION,
+                version: None,
+                notes: None,
+                install_mode: None,
+                message: None,
+                progress_percent: None,
+                background_progress: false,
+                defer_if_busy: false,
+            },
+        );
+    }
+
+    tauri::async_runtime::spawn(async move {
+        let mut guard = CheckGuard::new(Arc::clone(&state));
+        let mut resolved: Option<ResolvedCheck> = None;
+
+        #[cfg(target_os = "windows")]
+        {
+            if let Ok(updater) = app
+                .updater_builder()
+                .timeout(Duration::from_secs(10))
+                .configure_client(|builder| builder.redirect(manifest_redirect_policy()))
+                .build()
+            {
+                match updater.check().await {
+                    Ok(Some(native_update)) => {
+                        if !is_allowed_update_url(&native_update.download_url) {
+                            resolved = Some(ResolvedCheck::Error {
+                                version: None,
+                                message: "Blocked an unverified update download URL.".to_string(),
+                            });
+                        } else {
+                            let fallback_url = serde_json::from_value::<LatestReleaseManifest>(
+                                native_update.raw_json.clone(),
+                            )
+                            .ok()
+                            .and_then(|manifest| {
+                                select_download_url(
+                                    &manifest,
+                                    std::env::consts::OS,
+                                    std::env::consts::ARCH,
+                                    is_msi_install(),
+                                )
+                            });
+                            let version = native_update.version.clone();
+                            let notes = truncate_plain_notes(
+                                native_update.body.as_deref(),
+                                UPDATE_NOTES_MAX_CHARS,
+                            );
+                            resolved = Some(ResolvedCheck::Available {
+                                version,
+                                notes,
+                                install_mode: "install",
+                                pending: PendingUpdateAction::InApp {
+                                    update: Box::new(native_update),
+                                    fallback_url,
+                                },
+                            });
+                        }
+                    }
+                    Ok(None) => {
+                        resolved = Some(ResolvedCheck::UpToDate { version: None });
+                    }
+                    Err(_) => {
+                        // Fall back cleanly to Phase 1 manifest check (e.g. unsigned release
+                        // without `platforms` entries or unsupported bundle install type).
+                    }
+                }
+            }
+        }
+
+        let outcome = match resolved {
+            Some(result) => result,
+            None => check_manifest_phase1().await,
+        };
+
+        let effective_silent = guard.finish(silent);
+
+        match outcome {
+            ResolvedCheck::Available {
+                version,
+                notes,
+                install_mode,
+                pending,
+            } => {
+                state.set_pending(Some(pending));
+                if effective_silent && onboarding_pending.load(Ordering::Acquire) {
+                    return;
+                }
+                eval_update_modal(
+                    &app,
+                    &UpdateModalPayload {
+                        state: "available",
+                        current_version: APP_VERSION,
+                        version: Some(version),
+                        notes,
+                        install_mode: Some(install_mode),
+                        message: None,
+                        progress_percent: None,
+                        background_progress: false,
+                        defer_if_busy: effective_silent,
+                    },
+                );
+            }
+            ResolvedCheck::UpToDate { version } => {
+                state.set_pending(None);
+                if !effective_silent {
+                    eval_update_modal(
+                        &app,
+                        &UpdateModalPayload {
+                            state: "up_to_date",
+                            current_version: APP_VERSION,
+                            version,
+                            notes: None,
+                            install_mode: None,
+                            message: None,
+                            progress_percent: None,
+                            background_progress: false,
+                            defer_if_busy: false,
+                        },
+                    );
+                }
+            }
+            ResolvedCheck::Error { version, message } => {
+                state.set_pending(None);
+                if !effective_silent {
+                    eval_update_modal(
+                        &app,
+                        &UpdateModalPayload {
+                            state: "error",
+                            current_version: APP_VERSION,
+                            version,
+                            notes: None,
+                            install_mode: None,
+                            message: Some(message),
+                            progress_percent: None,
+                            background_progress: false,
+                            defer_if_busy: false,
+                        },
+                    );
+                }
+            }
+        }
+    });
+}
+
+fn handle_update_download_action(app: AppHandle, state: Arc<UpdateController>) {
+    let Some(pending) = state.get_pending() else {
+        return;
+    };
+
+    match pending {
+        PendingUpdateAction::Browser { url } => {
+            if is_allowed_update_url(&url) {
+                open_in_system_browser(url.as_str());
+            }
+            close_update_modal(&app);
+        }
+        #[cfg(target_os = "windows")]
+        PendingUpdateAction::InApp {
+            update,
+            fallback_url,
+        } => {
+            if state.install_in_flight.swap(true, Ordering::AcqRel) {
+                return;
+            }
+            state.set_install_progress(Some((update.version.clone(), 0)));
+            eval_update_modal(
+                &app,
+                &UpdateModalPayload {
+                    state: "downloading",
+                    current_version: APP_VERSION,
+                    version: Some(update.version.clone()),
+                    notes: None,
+                    install_mode: None,
+                    message: None,
+                    progress_percent: Some(0),
+                    background_progress: false,
+                    defer_if_busy: false,
+                },
+            );
+
+            tauri::async_runtime::spawn(async move {
+                use std::sync::atomic::AtomicU64;
+
+                let _guard = InstallGuard(Arc::clone(&state));
+                let downloaded_bytes = Arc::new(AtomicU64::new(0));
+                let last_emit = Arc::new(Mutex::new(
+                    Instant::now()
+                        .checked_sub(Duration::from_secs(1))
+                        .unwrap_or_else(Instant::now),
+                ));
+
+                let app_for_chunk = app.clone();
+                let state_for_chunk = Arc::clone(&state);
+                let version_for_chunk = update.version.clone();
+                let downloaded_for_chunk = Arc::clone(&downloaded_bytes);
+                let last_emit_for_chunk = Arc::clone(&last_emit);
+
+                let app_for_finish = app.clone();
+                let state_for_finish = Arc::clone(&state);
+                let version_for_finish = update.version.clone();
+
+                let result = update
+                    .download_and_install(
+                        move |chunk_len, content_length| {
+                            let total_read = downloaded_for_chunk
+                                .fetch_add(chunk_len as u64, Ordering::Relaxed)
+                                + chunk_len as u64;
+                            let should_emit = last_emit_for_chunk
+                                .lock()
+                                .map(|mut prev| {
+                                    if prev.elapsed() >= Duration::from_millis(150) {
+                                        *prev = Instant::now();
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                })
+                                .unwrap_or(false);
+                            if should_emit {
+                                let pct = content_length
+                                    .filter(|&len| len > 0)
+                                    .map(|len| ((total_read.saturating_mul(100)) / len).min(100) as u8);
+                                if let Some(percent) = pct {
+                                    state_for_chunk
+                                        .set_install_progress(Some((version_for_chunk.clone(), percent)));
+                                }
+                                eval_update_modal(
+                                    &app_for_chunk,
+                                    &UpdateModalPayload {
+                                        state: "downloading",
+                                        current_version: APP_VERSION,
+                                        version: Some(version_for_chunk.clone()),
+                                        notes: None,
+                                        install_mode: None,
+                                        message: None,
+                                        progress_percent: pct,
+                                        background_progress: true,
+                                        defer_if_busy: false,
+                                    },
+                                );
+                            }
+                        },
+                        move || {
+                            state_for_finish
+                                .set_install_progress(Some((version_for_finish.clone(), 100)));
+                            eval_update_modal(
+                                &app_for_finish,
+                                &UpdateModalPayload {
+                                    state: "installing",
+                                    current_version: APP_VERSION,
+                                    version: Some(version_for_finish.clone()),
+                                    notes: None,
+                                    install_mode: None,
+                                    message: None,
+                                    progress_percent: Some(100),
+                                    background_progress: false,
+                                    defer_if_busy: false,
+                                },
+                            );
+                        },
+                    )
+                    .await;
+
+                match result {
+                    Ok(()) => {
+                        app.restart();
+                    }
+                    Err(_) => {
+                        if let Some(url) = fallback_url.filter(is_allowed_update_url) {
+                            let version = update.version.clone();
+                            state.set_pending(Some(PendingUpdateAction::Browser { url }));
+                            eval_update_modal(
+                                &app,
+                                &UpdateModalPayload {
+                                    state: "available",
+                                    current_version: APP_VERSION,
+                                    version: Some(version),
+                                    notes: Some(
+                                        "In-app install was unavailable for this build. Download the installer directly in your browser."
+                                            .to_string(),
+                                    ),
+                                    install_mode: Some("browser"),
+                                    message: None,
+                                    progress_percent: None,
+                                    background_progress: false,
+                                    defer_if_busy: false,
+                                },
+                            );
+                        } else {
+                            eval_update_modal(
+                                &app,
+                                &UpdateModalPayload {
+                                    state: "error",
+                                    current_version: APP_VERSION,
+                                    version: None,
+                                    notes: None,
+                                    install_mode: None,
+                                    message: Some(
+                                        "Could not complete in-app update installation. Please try again."
+                                            .to_string(),
+                                    ),
+                                    progress_percent: None,
+                                    background_progress: false,
+                                    defer_if_busy: false,
+                                },
+                            );
+                        }
+                    }
+                }
+            });
+        }
+    }
+}
+
+/// Isolated closed Shadow DOM modal for checking, downloading, and installing updates.
+/// Embeds the per-launch cryptographic action nonce strictly inside its closed IIFE.
+fn update_script(nonce: &str) -> String {
+    let safe_nonce = escape_js_single_quoted(nonce);
+    let current_ver = escape_js_single_quoted(APP_VERSION);
+
+    let template = r#"
+(function () {
+  if (window.__rongyokUpdateInit) return;
+  window.__rongyokUpdateInit = true;
+
+  var ACTION_TOKEN = '__NONCE__';
+  var DEFAULT_CURRENT_VERSION = '__CURRENT_VERSION__';
+  var OPEN_DOWNLOAD_URL = 'rongyok-desk://open-update-download?token=' + encodeURIComponent(ACTION_TOKEN);
+  var RETRY_CHECK_URL = 'rongyok-desk://check-updates?token=' + encodeURIComponent(ACTION_TOKEN);
+  var HOST_ID = 'rongyok-desk-update-host';
+
+  var modalOpen = false;
+  var currentState = 'loading';
+  var lastFocused = null;
+  var ui = null;
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+
+  function createSvgIcon(paths, size) {
+    var svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', String(size));
+    svg.setAttribute('height', String(size));
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '1.85');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.setAttribute('aria-hidden', 'true');
+    for (var i = 0; i < paths.length; i++) {
+      var el = document.createElementNS(SVG_NS, paths[i][0]);
+      var attrs = paths[i][1];
+      for (var k in attrs) {
+        if (Object.prototype.hasOwnProperty.call(attrs, k)) {
+          el.setAttribute(k, attrs[k]);
+        }
+      }
+      svg.appendChild(el);
+    }
+    return svg;
+  }
+
+  function formatVersionLabel(v) {
+    if (!v) return '';
+    return v.charAt(0).toLowerCase() === 'v' ? v : 'v' + v;
+  }
+
+  function ensureUi() {
+    if (ui) {
+      var rootTarget = document.documentElement || document.body;
+      if (rootTarget && !ui.host.isConnected) {
+        rootTarget.appendChild(ui.host);
+      }
+      return ui;
+    }
+
+    var rootTarget = document.documentElement || document.body;
+    if (!rootTarget) return null;
+
+    var host = document.createElement('div');
+    host.id = HOST_ID;
+
+    var shadow = host.attachShadow({ mode: 'closed' });
+
+    var style = document.createElement('style');
+    style.textContent = [
+      ':host {',
+      '  all: initial !important;',
+      '  position: fixed !important;',
+      '  inset: 0 !important;',
+      '  width: 100vw !important;',
+      '  height: 100vh !important;',
+      '  margin: 0 !important;',
+      '  padding: 0 !important;',
+      '  border: 0 !important;',
+      '  background: transparent !important;',
+      '  z-index: 2147483647 !important;',
+      '  isolation: isolate !important;',
+      '  display: none !important;',
+      '  pointer-events: none !important;',
+      '  font-family: "Segoe UI", system-ui, -apple-system, sans-serif !important;',
+      '  color: #f5f2fa !important;',
+      '}',
+      ':host([data-rongyok-open="true"]) {',
+      '  display: block !important;',
+      '  pointer-events: auto !important;',
+      '}',
+      '*, *::before, *::after { box-sizing: border-box; }',
+      'svg { pointer-events: none; }',
+      '.backdrop {',
+      '  position: fixed; inset: 0;',
+      '  display: flex; align-items: center; justify-content: center;',
+      '  padding: 12px;',
+      '  background: rgba(12, 9, 18, 0.78);',
+      '  backdrop-filter: blur(6px);',
+      '  -webkit-backdrop-filter: blur(6px);',
+      '}',
+      '.dialog {',
+      '  width: min(460px, calc(100vw - 24px));',
+      '  max-height: calc(100vh - 24px);',
+      '  overflow-y: auto;',
+      '  border-radius: 16px;',
+      '  background: linear-gradient(180deg, #1b1526 0%, #120e18 100%);',
+      '  border: 1px solid rgba(228, 182, 94, 0.36);',
+      '  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.68), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;',
+      '  color: #f5f2fa;',
+      '  padding: 18px 20px;',
+      '}',
+      '.header {',
+      '  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;',
+      '  margin-bottom: 12px;',
+      '}',
+      '.title-wrap { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }',
+      '.icon-badge {',
+      '  flex: 0 0 auto;',
+      '  width: 38px; height: 38px;',
+      '  border-radius: 10px;',
+      '  display: inline-flex; align-items: center; justify-content: center;',
+      '  background: rgba(228, 182, 94, 0.14);',
+      '  border: 1px solid rgba(228, 182, 94, 0.38);',
+      '  color: #e4b65e;',
+      '}',
+      '.eyebrow {',
+      '  margin: 0 0 2px;',
+      '  font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;',
+      '  color: #e4b65e;',
+      '}',
+      'h2 {',
+      '  margin: 0;',
+      '  font-size: 18px; font-weight: 700; line-height: 1.25; color: #f5f2fa;',
+      '}',
+      '.close-btn {',
+      '  flex: 0 0 auto;',
+      '  width: 32px; height: 32px;',
+      '  border-radius: 8px;',
+      '  border: 1px solid rgba(255, 255, 255, 0.12);',
+      '  background: rgba(255, 255, 255, 0.04);',
+      '  color: #cfc6de;',
+      '  display: inline-flex; align-items: center; justify-content: center;',
+      '  cursor: pointer;',
+      '  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;',
+      '}',
+      '.close-btn:hover { background: rgba(228, 182, 94, 0.14); border-color: rgba(228, 182, 94, 0.4); color: #f5f2fa; }',
+      '.close-btn:disabled { opacity: 0.4; cursor: default; pointer-events: none; }',
+      '.close-btn:focus-visible, .secondary-btn:focus-visible, .primary-btn:focus-visible {',
+      '  outline: 2px solid #f0c674; outline-offset: 2px;',
+      '}',
+      '.status-text {',
+      '  margin: 0 0 12px;',
+      '  font-size: 13px; line-height: 1.5; color: #cfc6de;',
+      '}',
+      '.version-card {',
+      '  display: flex; align-items: center; justify-content: space-between; gap: 10px;',
+      '  padding: 10px 12px; margin-bottom: 12px;',
+      '  border-radius: 10px;',
+      '  border: 1px solid rgba(255, 255, 255, 0.1);',
+      '  background: rgba(18, 14, 24, 0.72);',
+      '  font-size: 12.5px;',
+      '}',
+      '.ver-label { color: #b7aec7; font-size: 11.5px; }',
+      '.ver-val {',
+      '  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;',
+      '  font-weight: 700; color: #f5f2fa;',
+      '}',
+      '.ver-val.accent { color: #f0c674; }',
+      '.notes-box {',
+      '  margin: 0 0 12px;',
+      '  padding: 10px 12px;',
+      '  max-height: 150px; overflow-y: auto;',
+      '  border-radius: 10px;',
+      '  border: 1px solid rgba(255, 255, 255, 0.08);',
+      '  background: rgba(18, 14, 24, 0.6);',
+      '  font-size: 12.5px; line-height: 1.48; color: #cfc6de;',
+      '  white-space: pre-wrap; overflow-wrap: anywhere;',
+      '}',
+      '.progress-track {',
+      '  width: 100%; height: 8px; border-radius: 999px; overflow: hidden;',
+      '  background: rgba(255, 255, 255, 0.08);',
+      '  border: 1px solid rgba(228, 182, 94, 0.25);',
+      '  margin-bottom: 10px;',
+      '}',
+      '.progress-fill {',
+      '  height: 100%; width: 0%;',
+      '  background: linear-gradient(90deg, #e4b65e 0%, #f0c674 100%);',
+      '  transition: width 120ms ease;',
+      '}',
+      '.footer {',
+      '  display: flex; align-items: center; justify-content: flex-end; gap: 10px;',
+      '  margin-top: 14px; flex-wrap: wrap;',
+      '}',
+      '.secondary-btn {',
+      '  padding: 8px 15px;',
+      '  border-radius: 9px;',
+      '  border: 1px solid rgba(255, 255, 255, 0.16);',
+      '  background: rgba(255, 255, 255, 0.05);',
+      '  color: #f5f2fa;',
+      '  font-size: 12.5px; font-weight: 600;',
+      '  cursor: pointer;',
+      '  transition: background 140ms ease, border-color 140ms ease;',
+      '}',
+      '.secondary-btn:hover { background: rgba(255, 255, 255, 0.1); border-color: rgba(228, 182, 94, 0.4); }',
+      '.primary-btn {',
+      '  padding: 8px 18px;',
+      '  border-radius: 9px;',
+      '  border: 1px solid #f0c674;',
+      '  background: #e4b65e;',
+      '  color: #120e18;',
+      '  font-size: 13px; font-weight: 700;',
+      '  cursor: pointer;',
+      '  transition: background 140ms ease, transform 100ms ease;',
+      '}',
+      '.primary-btn:hover { background: #f0c674; }',
+      '.primary-btn:active { transform: translateY(1px); }',
+      '[hidden] { display: none !important; }',
+      '@media (max-width: 540px) {',
+      '  .dialog { padding: 15px 14px; }',
+      '  .version-card { flex-direction: column; align-items: flex-start; gap: 4px; }',
+      '  .footer { flex-direction: column-reverse; align-items: stretch; }',
+      '  .secondary-btn, .primary-btn { width: 100%; text-align: center; }',
+      '}'
+    ].join('\n');
+
+    var backdrop = document.createElement('div');
+    backdrop.className = 'backdrop';
+
+    var dialog = document.createElement('div');
+    dialog.className = 'dialog';
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    dialog.setAttribute('aria-labelledby', 'rongyok-update-title');
+
+    var header = document.createElement('div');
+    header.className = 'header';
+
+    var titleWrap = document.createElement('div');
+    titleWrap.className = 'title-wrap';
+
+    var iconBadge = document.createElement('span');
+    iconBadge.className = 'icon-badge';
+    iconBadge.appendChild(createSvgIcon([
+      ['path', { d: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4' }],
+      ['polyline', { points: '7 10 12 15 17 10' }],
+      ['line', { x1: '12', y1: '15', x2: '12', y2: '3' }]
+    ], 20));
+
+    var textBlock = document.createElement('div');
+    var eyebrow = document.createElement('p');
+    eyebrow.className = 'eyebrow';
+    eyebrow.textContent = 'Updates';
+
+    var title = document.createElement('h2');
+    title.id = 'rongyok-update-title';
+    title.textContent = 'Software Update';
+
+    textBlock.appendChild(eyebrow);
+    textBlock.appendChild(title);
+    titleWrap.appendChild(iconBadge);
+    titleWrap.appendChild(textBlock);
+
+    var closeXBtn = document.createElement('button');
+    closeXBtn.type = 'button';
+    closeXBtn.className = 'close-btn';
+    closeXBtn.setAttribute('aria-label', 'Close');
+    closeXBtn.appendChild(createSvgIcon([
+      ['path', { d: 'M18 6L6 18M6 6l12 12' }]
+    ], 16));
+
+    header.appendChild(titleWrap);
+    header.appendChild(closeXBtn);
+
+    var statusText = document.createElement('p');
+    statusText.className = 'status-text';
+
+    var versionCard = document.createElement('div');
+    versionCard.className = 'version-card';
+    var currentCol = document.createElement('div');
+    var currentLbl = document.createElement('div');
+    currentLbl.className = 'ver-label';
+    currentLbl.textContent = 'Installed';
+    var currentVal = document.createElement('div');
+    currentVal.className = 'ver-val';
+    currentCol.appendChild(currentLbl);
+    currentCol.appendChild(currentVal);
+
+    var remoteCol = document.createElement('div');
+    var remoteLbl = document.createElement('div');
+    remoteLbl.className = 'ver-label';
+    remoteLbl.textContent = 'Available';
+    var remoteVal = document.createElement('div');
+    remoteVal.className = 'ver-val accent';
+    remoteCol.appendChild(remoteLbl);
+    remoteCol.appendChild(remoteVal);
+
+    versionCard.appendChild(currentCol);
+    versionCard.appendChild(remoteCol);
+
+    var notesBox = document.createElement('div');
+    notesBox.className = 'notes-box';
+
+    var progressTrack = document.createElement('div');
+    progressTrack.className = 'progress-track';
+    var progressFill = document.createElement('div');
+    progressFill.className = 'progress-fill';
+    progressTrack.appendChild(progressFill);
+
+    var footer = document.createElement('div');
+    footer.className = 'footer';
+
+    var secondaryBtn = document.createElement('button');
+    secondaryBtn.type = 'button';
+    secondaryBtn.className = 'secondary-btn';
+
+    var primaryBtn = document.createElement('button');
+    primaryBtn.type = 'button';
+    primaryBtn.className = 'primary-btn';
+
+    footer.appendChild(secondaryBtn);
+    footer.appendChild(primaryBtn);
+
+    dialog.appendChild(header);
+    dialog.appendChild(statusText);
+    dialog.appendChild(versionCard);
+    dialog.appendChild(notesBox);
+    dialog.appendChild(progressTrack);
+    dialog.appendChild(footer);
+    backdrop.appendChild(dialog);
+
+    shadow.appendChild(style);
+    shadow.appendChild(backdrop);
+    rootTarget.appendChild(host);
+
+    backdrop.addEventListener('click', function (event) {
+      if (event.target === backdrop && currentState !== 'installing') {
+        closeModal();
+      }
+    });
+    closeXBtn.addEventListener('click', function () {
+      if (currentState !== 'installing') {
+        closeModal();
+      }
+    });
+    secondaryBtn.addEventListener('click', closeModal);
+    primaryBtn.addEventListener('click', function () {
+      if (currentState === 'available') {
+        window.location.href = OPEN_DOWNLOAD_URL;
+      } else if (currentState === 'error') {
+        window.location.href = RETRY_CHECK_URL;
+      } else {
+        closeModal();
+      }
+    });
+
+    ui = {
+      host: host,
+      title: title,
+      closeXBtn: closeXBtn,
+      statusText: statusText,
+      versionCard: versionCard,
+      currentVal: currentVal,
+      remoteCol: remoteCol,
+      remoteVal: remoteVal,
+      notesBox: notesBox,
+      progressTrack: progressTrack,
+      progressFill: progressFill,
+      secondaryBtn: secondaryBtn,
+      primaryBtn: primaryBtn
+    };
+    return ui;
+  }
+
+  function isModalOpen() {
+    return modalOpen;
+  }
+
+  function showState(rawPayload) {
+    var payload = rawPayload;
+    if (typeof rawPayload === 'string') {
+      try { payload = JSON.parse(rawPayload); } catch (_) { payload = null; }
+    }
+    if (!payload || typeof payload !== 'object') {
+      payload = { state: 'loading', currentVersion: DEFAULT_CURRENT_VERSION };
+    }
+
+    var st = payload.state || 'loading';
+    if (payload.deferIfBusy) {
+      var scHost = document.getElementById('rongyok-desk-shortcuts-host');
+      var abHost = document.getElementById('rongyok-desk-about-host');
+      if ((scHost && scHost.getAttribute('data-rongyok-open') === 'true') ||
+          (abHost && abHost.getAttribute('data-rongyok-open') === 'true')) {
+        return;
+      }
+    }
+
+    if (st === 'downloading' && payload.backgroundProgress && !modalOpen) {
+      if (ui) {
+        var bgVer = formatVersionLabel(payload.version || '');
+        var hasPct = typeof payload.progressPercent === 'number';
+        var bgPct = hasPct ? Math.max(0, Math.min(100, payload.progressPercent)) : null;
+        ui.statusText.textContent = hasPct
+          ? 'Downloading ' + (bgVer || 'update') + ' (' + String(bgPct) + '%)...'
+          : 'Downloading ' + (bgVer || 'update') + '...';
+        if (hasPct) {
+          ui.progressFill.style.width = String(bgPct) + '%';
+        }
+      }
+      return;
+    }
+
+    if (window.__rongyokCloseShortcuts) {
+      try { window.__rongyokCloseShortcuts(); } catch (_) {}
+    }
+    if (window.__rongyokCloseAbout) {
+      try { window.__rongyokCloseAbout(); } catch (_) {}
+    }
+
+    var parts = ensureUi();
+    if (!parts) {
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function () {
+          showState(payload);
+        }, { once: true });
+      }
+      return;
+    }
+
+    currentState = st;
+    var curVer = formatVersionLabel(payload.currentVersion || DEFAULT_CURRENT_VERSION);
+    var newVer = formatVersionLabel(payload.version || '');
+
+    parts.currentVal.textContent = curVer;
+    parts.closeXBtn.disabled = (st === 'installing');
+    parts.versionCard.hidden = true;
+    parts.remoteCol.hidden = true;
+    parts.notesBox.hidden = true;
+    parts.progressTrack.hidden = true;
+    parts.secondaryBtn.hidden = true;
+    parts.primaryBtn.hidden = false;
+
+    if (st === 'loading') {
+      parts.title.textContent = 'Checking for Updates';
+      parts.statusText.textContent = 'Checking the latest release information for Rongyok Desk...';
+      parts.primaryBtn.textContent = 'Close';
+    } else if (st === 'available') {
+      parts.title.textContent = 'Update Available';
+      parts.statusText.textContent = 'A new version of Rongyok Desk is ready.';
+      parts.versionCard.hidden = false;
+      parts.remoteCol.hidden = false;
+      parts.remoteVal.textContent = newVer;
+      if (payload.notes) {
+        parts.notesBox.hidden = false;
+        parts.notesBox.textContent = String(payload.notes);
+      }
+      parts.secondaryBtn.hidden = false;
+      parts.secondaryBtn.textContent = 'Later';
+      parts.primaryBtn.textContent = payload.installMode === 'install' ? 'Install Update' : 'Download Update';
+    } else if (st === 'up_to_date') {
+      parts.title.textContent = 'You Are Up to Date';
+      parts.statusText.textContent = 'You are running the latest version of Rongyok Desk.';
+      parts.versionCard.hidden = false;
+      parts.primaryBtn.textContent = 'Close';
+    } else if (st === 'downloading') {
+      var hasProgress = typeof payload.progressPercent === 'number';
+      var pct = hasProgress ? Math.max(0, Math.min(100, payload.progressPercent)) : null;
+      parts.title.textContent = 'Downloading Update';
+      parts.statusText.textContent = hasProgress
+        ? 'Downloading ' + (newVer || 'update') + ' (' + String(pct) + '%)...'
+        : 'Downloading ' + (newVer || 'update') + '...';
+      parts.progressTrack.hidden = false;
+      if (hasProgress) {
+        parts.progressFill.style.width = String(pct) + '%';
+      }
+      parts.primaryBtn.textContent = 'Hide';
+    } else if (st === 'installing') {
+      parts.title.textContent = 'Installing Update';
+      parts.statusText.textContent = 'Starting the installer and restarting Rongyok Desk...';
+      parts.progressTrack.hidden = false;
+      parts.progressFill.style.width = '100%';
+      parts.primaryBtn.hidden = true;
+    } else {
+      parts.title.textContent = 'Update Check Failed';
+      parts.statusText.textContent = payload.message ? String(payload.message) : 'Unable to check for updates right now.';
+      parts.secondaryBtn.hidden = false;
+      parts.secondaryBtn.textContent = 'Close';
+      parts.primaryBtn.textContent = 'Retry';
+    }
+
+    if (!modalOpen) {
+      lastFocused = document.activeElement;
+      modalOpen = true;
+      parts.host.setAttribute('data-rongyok-open', 'true');
+      requestAnimationFrame(function () {
+        try {
+          if (!parts.primaryBtn.hidden) {
+            parts.primaryBtn.focus();
+          } else {
+            parts.closeXBtn.focus();
+          }
+        } catch (_) {}
+      });
+    }
+  }
+
+  function closeModal() {
+    if (!modalOpen) return;
+    modalOpen = false;
+    if (ui) {
+      ui.host.removeAttribute('data-rongyok-open');
+    }
+    if (lastFocused && lastFocused.isConnected && typeof lastFocused.focus === 'function') {
+      try { lastFocused.focus(); } catch (_) {}
+    }
+    lastFocused = null;
+  }
+
+  window.__rongyokShowUpdate = showState;
+  window.__rongyokCloseUpdate = closeModal;
+
+  window.addEventListener('keydown', function (event) {
+    var key = (event.key || '').toLowerCase();
+    if (key === 'escape' && isModalOpen() && currentState !== 'installing') {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      closeModal();
+    }
+  }, true);
+})();
+"#;
+
+    template
+        .replace("__NONCE__", &safe_nonce)
+        .replace("__CURRENT_VERSION__", &current_ver)
 }
 #[cfg(target_os = "windows")]
 unsafe fn read_png_stream(stream: &windows::Win32::System::Com::IStream) -> Option<Vec<u8>> {
@@ -1684,6 +3097,13 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         Some("F1"),
     )?;
     let help_separator = PredefinedMenuItem::separator(app)?;
+    let check_updates = MenuItem::with_id(
+        app,
+        "check_updates",
+        "Check for Updates...",
+        true,
+        None::<&str>,
+    )?;
     let about = MenuItem::with_id(
         app,
         "about",
@@ -1691,9 +3111,49 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         true,
         None::<&str>,
     )?;
-    let help = Submenu::with_items(app, "Help", true, &[&shortcuts, &help_separator, &about])?;
+    let help = Submenu::with_items(
+        app,
+        "Help",
+        true,
+        &[&shortcuts, &help_separator, &check_updates, &about],
+    )?;
 
     Menu::with_items(app, &[&navigate, &help])
+}
+
+/// Intercept internal `rongyok-desk://` navigation actions from our isolated Shadow DOM modals.
+/// Returns `true` for any `rongyok-desk://` URL so it never falls through to the system browser.
+fn handle_custom_scheme_url(
+    url: &Url,
+    handle: &AppHandle,
+    onboarding_pending: &Arc<AtomicBool>,
+    update_state: &Arc<UpdateController>,
+) -> bool {
+    if url.scheme() != ONBOARDING_DISMISS_SCHEME {
+        return false;
+    }
+    if is_onboarding_dismiss_url(url) {
+        onboarding_pending.store(false, Ordering::SeqCst);
+        mark_onboarding_seen(handle);
+        return true;
+    }
+    if let Some(action) = parse_update_action_url(url, &update_state.nonce) {
+        match action {
+            UPDATE_ACTION_OPEN_DOWNLOAD => {
+                handle_update_download_action(handle.clone(), Arc::clone(update_state));
+            }
+            UPDATE_ACTION_CHECK => {
+                trigger_update_check(
+                    handle.clone(),
+                    Arc::clone(update_state),
+                    Arc::clone(onboarding_pending),
+                    false,
+                );
+            }
+            _ => {}
+        }
+    }
+    true
 }
 
 fn main() {
@@ -1716,8 +3176,12 @@ fn main() {
     }
     let taking_picture = screenshot_path.is_some();
 
-    let app = tauri::Builder::default()
-        .on_menu_event(|app, event| {
+    let builder = tauri::Builder::default();
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+
+    let app = builder
+        .on_menu_event(move |app, event| {
             let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
                 return;
             };
@@ -1750,6 +3214,21 @@ fn main() {
                         "window.__rongyokShowShortcuts && window.__rongyokShowShortcuts(false);",
                     );
                 }
+                "check_updates" => {
+                    if !taking_picture {
+                        if let (Some(update_state), Some(onboarding_pending)) = (
+                            app.try_state::<Arc<UpdateController>>(),
+                            app.try_state::<Arc<AtomicBool>>(),
+                        ) {
+                            trigger_update_check(
+                                app.clone(),
+                                Arc::clone(update_state.inner()),
+                                Arc::clone(onboarding_pending.inner()),
+                                false,
+                            );
+                        }
+                    }
+                }
                 "about" => {
                     let _ = window.eval(
                         "window.__rongyokShowAbout && window.__rongyokShowAbout();",
@@ -1765,6 +3244,9 @@ fn main() {
                 taking_picture,
                 has_seen_onboarding(&handle),
             )));
+            let update_state = Arc::new(UpdateController::new());
+            app.manage(Arc::clone(&onboarding_pending));
+            app.manage(Arc::clone(&update_state));
 
             // Keep cookies and site storage in a steady folder, so the person stays
             // signed in between launches.
@@ -1796,13 +3278,13 @@ fn main() {
             // The keys a desktop window keeps working even if the page swallows them.
             .initialization_script(SHORTCUT_SCRIPT)
             .initialization_script(about_script())
+            .initialization_script(update_script(&update_state.nonce))
             .on_navigation({
                 let handle = handle.clone();
                 let onboarding_pending = Arc::clone(&onboarding_pending);
+                let update_state = Arc::clone(&update_state);
                 move |url| {
-                    if is_onboarding_dismiss_url(url) {
-                        onboarding_pending.store(false, Ordering::SeqCst);
-                        mark_onboarding_seen(&handle);
+                    if handle_custom_scheme_url(url, &handle, &onboarding_pending, &update_state) {
                         return false;
                     }
                     if is_internal(url) {
@@ -1817,10 +3299,9 @@ fn main() {
             .on_new_window({
                 let handle = handle.clone();
                 let onboarding_pending = Arc::clone(&onboarding_pending);
+                let update_state = Arc::clone(&update_state);
                 move |url, _features| {
-                    if is_onboarding_dismiss_url(&url) {
-                        onboarding_pending.store(false, Ordering::SeqCst);
-                        mark_onboarding_seen(&handle);
+                    if handle_custom_scheme_url(&url, &handle, &onboarding_pending, &update_state) {
                         return tauri::webview::NewWindowResponse::Deny;
                     }
                     if is_internal(&url) {
@@ -1913,6 +3394,22 @@ fn main() {
                 run_screenshot(handle, path);
             } else {
                 let _ = window.set_focus();
+                if !onboarding_pending.load(Ordering::Acquire) {
+                    let app_for_update = handle.clone();
+                    let state_for_update = Arc::clone(&update_state);
+                    let onboarding_for_update = Arc::clone(&onboarding_pending);
+                    std::thread::spawn(move || {
+                        std::thread::sleep(Duration::from_secs(4));
+                        if !onboarding_for_update.load(Ordering::Acquire) {
+                            trigger_update_check(
+                                app_for_update,
+                                state_for_update,
+                                onboarding_for_update,
+                                true,
+                            );
+                        }
+                    });
+                }
             }
 
             Ok(())
@@ -2206,5 +3703,352 @@ mod tests {
         assert!(!script.contains("__VERSION_BADGE__"));
         assert!(!script.contains("__VERSION_INFO__"));
         assert!(!script.contains("__COPYRIGHT__"));
+    }
+
+    #[test]
+    fn semver_parsing_and_comparison_handle_v_prefix_and_prereleases() {
+        assert_eq!(
+            parse_semver_version("v1.2.0"),
+            Some(semver::Version::new(1, 2, 0))
+        );
+        assert_eq!(
+            parse_semver_version(" V1.3.4 "),
+            Some(semver::Version::new(1, 3, 4))
+        );
+        assert!(is_newer_version("1.2.0", "1.2.1"));
+        assert!(is_newer_version("1.2.0", "v1.3.0"));
+        assert!(is_newer_version("1.2.0-rc.1", "1.2.0"));
+        assert!(!is_newer_version("1.2.0", "1.2.0"));
+        assert!(!is_newer_version("1.2.0", "1.1.9"));
+        assert!(!is_newer_version("1.2.0", "not-a-version"));
+    }
+
+    #[test]
+    fn update_url_allowlist_accepts_repo_https_and_rejects_untrusted_targets() {
+        assert!(parse_allowed_update_url(
+            "https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/v1.2.0/Rongyok.Desk_1.2.0_x64-setup.exe"
+        )
+        .is_some());
+        assert!(parse_allowed_update_url(
+            "https://GITHUB.COM/EEMEEMMEEx/rongyok-desk/releases/latest"
+        )
+        .is_some());
+
+        assert!(parse_allowed_update_url(
+            "http://github.com/EEMEEMMEEx/rongyok-desk/releases/download/v1.2.0/setup.exe"
+        )
+        .is_none());
+        assert!(parse_allowed_update_url(
+            "https://github.com/other-org/rongyok-desk/releases/download/v1.2.0/setup.exe"
+        )
+        .is_none());
+        assert!(parse_allowed_update_url(
+            "https://github.com/EEMEEMMEEx/other-repo/releases/download/v1.2.0/setup.exe"
+        )
+        .is_none());
+        assert!(parse_allowed_update_url(
+            "https://github.com/EEMEEMMEEx/rongyok-desk/../../evil/setup.exe"
+        )
+        .is_none());
+        assert!(parse_allowed_update_url(
+            "https://github.com.evil.example/EEMEEMMEEx/rongyok-desk/setup.exe"
+        )
+        .is_none());
+        assert!(parse_allowed_update_url(
+            "https://user@github.com/EEMEEMMEEx/rongyok-desk/setup.exe"
+        )
+        .is_none());
+        assert!(parse_allowed_update_url(
+            "https://github.com:8443/EEMEEMMEEx/rongyok-desk/setup.exe"
+        )
+        .is_none());
+        assert!(parse_allowed_update_url("javascript:alert(1)").is_none());
+    }
+
+    #[test]
+    fn latest_manifest_downloads_only_selects_expected_os_arch_and_msi_assets() {
+        let raw = r#"{
+            "version": "1.3.0",
+            "notes": "Bug fixes",
+            "pub_date": "2026-11-16T00:00:00Z",
+            "platforms": {},
+            "downloads": {
+                "windows-x86_64-nsis": "https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/v1.3.0/Rongyok.Desk_1.3.0_x64-setup.exe",
+                "windows-x86_64-msi": "https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/v1.3.0/Rongyok.Desk_1.3.0_x64_en-US.msi",
+                "darwin-aarch64-dmg": "https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/v1.3.0/Rongyok.Desk_1.3.0_aarch64.dmg",
+                "darwin-x86_64-dmg": "https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/v1.3.0/Rongyok.Desk_1.3.0_x64.dmg",
+                "linux-x86_64-flatpak": "https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/v1.3.0/Rongyok-Desk-1.3.0-x86_64.flatpak"
+            }
+        }"#;
+        let manifest: LatestReleaseManifest = serde_json::from_str(raw).unwrap();
+
+        assert_eq!(
+            select_download_url(&manifest, "windows", "x86_64", false)
+                .unwrap()
+                .as_str(),
+            "https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/v1.3.0/Rongyok.Desk_1.3.0_x64-setup.exe"
+        );
+        assert_eq!(
+            select_download_url(&manifest, "windows", "x86_64", true)
+                .unwrap()
+                .as_str(),
+            "https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/v1.3.0/Rongyok.Desk_1.3.0_x64_en-US.msi"
+        );
+        assert_eq!(
+            select_download_url(&manifest, "macos", "aarch64", false)
+                .unwrap()
+                .as_str(),
+            "https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/v1.3.0/Rongyok.Desk_1.3.0_aarch64.dmg"
+        );
+        assert_eq!(
+            select_download_url(&manifest, "macos", "x86_64", false)
+                .unwrap()
+                .as_str(),
+            "https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/v1.3.0/Rongyok.Desk_1.3.0_x64.dmg"
+        );
+        assert_eq!(
+            select_download_url(&manifest, "linux", "x86_64", false)
+                .unwrap()
+                .as_str(),
+            "https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/v1.3.0/Rongyok-Desk-1.3.0-x86_64.flatpak"
+        );
+    }
+
+    #[test]
+    fn latest_manifest_with_platforms_and_untrusted_entries_is_filtered() {
+        let raw = r#"{
+            "version": "1.3.0",
+            "platforms": {
+                "windows-x86_64": {
+                    "url": "https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/v1.3.0/Rongyok.Desk_1.3.0_x64-setup.exe",
+                    "signature": "sig1"
+                },
+                "windows-x86_64-msi": {
+                    "url": "https://evil.example/fake.msi",
+                    "signature": "sig2"
+                },
+                "darwin-aarch64": {
+                    "url": "https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/v1.3.0/Rongyok.Desk_1.3.0_aarch64.app.tar.gz",
+                    "signature": "sig3"
+                }
+            }
+        }"#;
+        let manifest: LatestReleaseManifest = serde_json::from_str(raw).unwrap();
+
+        assert_eq!(
+            select_download_url(&manifest, "windows", "x86_64", false)
+                .unwrap()
+                .as_str(),
+            "https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/v1.3.0/Rongyok.Desk_1.3.0_x64-setup.exe"
+        );
+        // Untrusted MSI URL is rejected and falls back cleanly to verified NSIS entry.
+        assert_eq!(
+            select_download_url(&manifest, "windows", "x86_64", true)
+                .unwrap()
+                .as_str(),
+            "https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/v1.3.0/Rongyok.Desk_1.3.0_x64-setup.exe"
+        );
+        assert_eq!(
+            select_download_url(&manifest, "macos", "aarch64", false)
+                .unwrap()
+                .as_str(),
+            "https://github.com/EEMEEMMEEx/rongyok-desk/releases/download/v1.3.0/Rongyok.Desk_1.3.0_aarch64.app.tar.gz"
+        );
+        assert!(select_download_url(&manifest, "linux", "x86_64", false).is_none());
+    }
+
+    #[test]
+    fn update_nonce_and_action_url_validation_enforce_exact_token() {
+        let nonce = generate_update_nonce();
+        assert_eq!(nonce.len(), 32);
+        assert!(nonce.bytes().all(|b| b.is_ascii_hexdigit()));
+
+        let open_url = Url::parse(&format!(
+            "rongyok-desk://{UPDATE_ACTION_OPEN_DOWNLOAD}?token={nonce}"
+        ))
+        .unwrap();
+        assert_eq!(
+            parse_update_action_url(&open_url, &nonce),
+            Some(UPDATE_ACTION_OPEN_DOWNLOAD)
+        );
+
+        let retry_url = Url::parse(&format!(
+            "rongyok-desk://{UPDATE_ACTION_CHECK}?token={nonce}"
+        ))
+        .unwrap();
+        assert_eq!(
+            parse_update_action_url(&retry_url, &nonce),
+            Some(UPDATE_ACTION_CHECK)
+        );
+
+        assert_eq!(
+            parse_update_action_url(
+                &Url::parse(&format!("rongyok-desk://{UPDATE_ACTION_OPEN_DOWNLOAD}?token=wrong"))
+                    .unwrap(),
+                &nonce
+            ),
+            None
+        );
+        assert_eq!(
+            parse_update_action_url(
+                &Url::parse(&format!("rongyok-desk://{UPDATE_ACTION_OPEN_DOWNLOAD}")).unwrap(),
+                &nonce
+            ),
+            None
+        );
+        assert_eq!(
+            parse_update_action_url(
+                &Url::parse(&format!("https://{UPDATE_ACTION_OPEN_DOWNLOAD}?token={nonce}"))
+                    .unwrap(),
+                &nonce
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn truncate_plain_notes_respects_limit_and_empty_values() {
+        assert_eq!(truncate_plain_notes(None, 20), None);
+        assert_eq!(truncate_plain_notes(Some("   "), 20), None);
+        assert_eq!(
+            truncate_plain_notes(Some("  Short note  "), 20),
+            Some("Short note".to_string())
+        );
+        assert_eq!(
+            truncate_plain_notes(Some("abcdefghij"), 5),
+            Some("abcde...".to_string())
+        );
+    }
+
+    #[test]
+    fn update_script_contains_isolated_modal_nonce_mutual_exclusion_and_no_emoji() {
+        let nonce = "deadbeef0123456789abcdef01234567";
+        let script = update_script(nonce);
+
+        assert!(script.is_ascii());
+        assert!(script.contains("rongyok-desk-update-host"));
+        assert!(script.contains("attachShadow({ mode: 'closed' })"));
+        assert!(script.contains(r#":host([data-rongyok-open="true"])"#));
+        assert!(script.contains("z-index: 2147483647 !important"));
+        assert!(script.contains("svg { pointer-events: none; }"));
+        assert!(script.contains("#120e18"));
+        assert!(script.contains("#e4b65e"));
+        assert!(script.contains("@media (max-width: 540px)"));
+        assert!(script.contains(nonce));
+        assert!(!script.contains("__NONCE__"));
+        assert!(!script.contains("__CURRENT_VERSION__"));
+        assert!(!script.contains(".innerHTML"));
+        assert!(script.contains("window.__rongyokShowUpdate"));
+        assert!(script.contains("window.__rongyokCloseUpdate"));
+        assert!(script.contains("window.__rongyokCloseShortcuts"));
+        assert!(script.contains("window.__rongyokCloseAbout"));
+        assert!(SHORTCUT_SCRIPT.contains("window.__rongyokCloseUpdate"));
+        assert!(about_script().contains("window.__rongyokCloseUpdate"));
+    }
+
+    #[test]
+    fn manifest_redirect_hop_allowlist_permits_github_cdn_and_rejects_untrusted_hops() {
+        assert!(is_allowed_manifest_hop(
+            &Url::parse(UPDATE_MANIFEST_URL).unwrap()
+        ));
+        assert!(is_allowed_manifest_hop(
+            &Url::parse("https://release-assets.githubusercontent.com/github-production-release-asset/123/latest.json").unwrap()
+        ));
+        assert!(is_allowed_manifest_hop(
+            &Url::parse("https://objects.githubusercontent.com/github-production-release-asset/123/latest.json").unwrap()
+        ));
+        assert!(is_allowed_manifest_hop(
+            &Url::parse("https://github-releases.githubusercontent.com/123/latest.json").unwrap()
+        ));
+
+        assert!(!is_allowed_manifest_hop(
+            &Url::parse("http://objects.githubusercontent.com/latest.json").unwrap()
+        ));
+        assert!(!is_allowed_manifest_hop(
+            &Url::parse("https://evil.example/latest.json").unwrap()
+        ));
+        assert!(!is_allowed_manifest_hop(
+            &Url::parse("https://github.com/other-user/other-repo/releases/latest/download/latest.json").unwrap()
+        ));
+        assert!(!is_allowed_manifest_hop(
+            &Url::parse("https://github.com/EEMEEMMEEx/rongyok-desk/../../evil/latest.json").unwrap()
+        ));
+        assert!(!is_allowed_manifest_hop(
+            &Url::parse("https://user@objects.githubusercontent.com/latest.json").unwrap()
+        ));
+        assert!(!is_allowed_manifest_hop(
+            &Url::parse("https://objects.githubusercontent.com:8443/latest.json").unwrap()
+        ));
+    }
+
+    #[test]
+    fn manifest_parser_enforces_size_cap() {
+        let valid = br#"{"version":"1.2.1","notes":"Fix"}"#;
+        assert_eq!(parse_manifest_bytes(valid).unwrap().version, "1.2.1");
+
+        let oversized = vec![b' '; MAX_MANIFEST_BYTES + 1];
+        assert!(parse_manifest_bytes(&oversized).is_err());
+    }
+
+    #[test]
+    fn update_controller_promotes_silent_check_to_interactive_atomically() {
+        let controller = UpdateController::new();
+
+        // Silent check starts cleanly.
+        assert_eq!(controller.begin_check(true), CheckStart::Spawn);
+        // Duplicate silent check is ignored while one is in flight.
+        assert_eq!(controller.begin_check(true), CheckStart::AlreadyRunning);
+        // Manual check while silent check is in flight promotes it to interactive.
+        assert_eq!(controller.begin_check(false), CheckStart::Promoted);
+        // Completing the initially-silent check resolves effective_silent = false.
+        assert!(!controller.finish_check(true));
+
+        // Next check spawns normally and stays silent when unpromoted.
+        assert_eq!(controller.begin_check(true), CheckStart::Spawn);
+        assert!(controller.finish_check(true));
+    }
+
+    #[test]
+    fn update_controller_install_progress_tracks_and_resets_on_drop() {
+        let controller = Arc::new(UpdateController::new());
+        assert!(!controller.install_in_flight.load(Ordering::Acquire));
+        assert_eq!(controller.get_install_progress(), None);
+
+        {
+            controller.install_in_flight.store(true, Ordering::Release);
+            let _guard = InstallGuard(Arc::clone(&controller));
+            controller.set_install_progress(Some(("1.3.0".to_string(), 42)));
+            assert_eq!(
+                controller.get_install_progress(),
+                Some(("1.3.0".to_string(), 42))
+            );
+        }
+
+        assert!(!controller.install_in_flight.load(Ordering::Acquire));
+        assert_eq!(controller.get_install_progress(), None);
+    }
+
+    #[test]
+    fn update_script_respects_background_progress_and_defer_if_busy() {
+        let script = update_script("0123456789abcdef0123456789abcdef");
+        assert!(script.contains("payload.deferIfBusy"));
+        assert!(script.contains("rongyok-desk-shortcuts-host"));
+        assert!(script.contains("rongyok-desk-about-host"));
+        assert!(script.contains("payload.backgroundProgress && !modalOpen"));
+
+        let payload_json = serde_json::to_string(&UpdateModalPayload {
+            state: "downloading",
+            current_version: APP_VERSION,
+            version: Some("1.3.0".to_string()),
+            notes: None,
+            install_mode: None,
+            message: None,
+            progress_percent: Some(50),
+            background_progress: true,
+            defer_if_busy: true,
+        })
+        .unwrap();
+        assert!(payload_json.contains(r#""backgroundProgress":true"#));
+        assert!(payload_json.contains(r#""deferIfBusy":true"#));
     }
 }
