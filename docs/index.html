@@ -24,8 +24,19 @@
                 ? "light"
                 : "dark";
           document.documentElement.setAttribute("data-theme", theme);
+          var savedLang = localStorage.getItem("rongyok-desk-lang");
+          var navLang = ((navigator.language || "") + "").toLowerCase();
+          var lang =
+            savedLang === "th" || savedLang === "en"
+              ? savedLang
+              : navLang.indexOf("th") === 0
+                ? "th"
+                : "en";
+          document.documentElement.setAttribute("data-lang", lang);
+          document.documentElement.setAttribute("lang", lang);
         } catch (_err) {
           document.documentElement.setAttribute("data-theme", "dark");
+          document.documentElement.setAttribute("data-lang", "en");
         }
       })();
     </script>
@@ -55,9 +66,34 @@
           <a href="#downloads">Platforms</a>
           <a href="#install">Install Guide</a>
           <a href="#shortcuts">Shortcuts</a>
+          <a href="#privacy">Privacy</a>
         </nav>
 
         <div class="nav-actions">
+          <button
+            type="button"
+            class="icon-btn lang-btn"
+            id="lang-toggle"
+            aria-label="Switch language to Thai"
+            aria-pressed="false"
+            title="Switch language (TH / EN)"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M2 12h20" />
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+            </svg>
+            <span id="lang-label">TH</span>
+          </button>
+
           <button
             type="button"
             class="icon-btn"
@@ -145,6 +181,7 @@
           <a href="#downloads">Platforms</a>
           <a href="#install">Install Guide</a>
           <a href="#shortcuts">Shortcuts</a>
+          <a href="#privacy">Privacy</a>
         </div>
       </div>
     </header>
@@ -166,9 +203,14 @@
             <p class="hero-lead">
               Rongyok Desk is a fast single-site desktop browser (SSB) that
               launches <code>https://rongyok.com/</code> inside a clean
-              1280&times;800 native window—with strict domain isolation,
+              1280&times;800 native window&mdash;with strict domain isolation,
               persistent logins, remembered window placement, and smooth HTML5
-              media playback.
+              media playback. Running on your OS WebView without full-browser UI
+              or extensions, it uses <strong>~1.6&times;&ndash;1.8&times; less RAM</strong>
+              than a clean single browser tab (~157 MB vs ~255&ndash;275 MB
+              Private Working Set on Windows Edge/Brave) and
+              <strong>~2.2&times;&ndash;4.3&times; less</strong> on a fresh
+              browser launch (~163 MB vs ~355&ndash;703 MB).
             </p>
 
             <div class="hero-actions">
@@ -204,7 +246,7 @@
               </div>
               <div>
                 <dt>Package Size</dt>
-                <dd>1.10 – 1.83 MB</dd>
+                <dd>1.27 – 2.19 MB</dd>
               </div>
             </dl>
           </div>
@@ -851,9 +893,9 @@
             <p class="section-eyebrow">Controls</p>
             <h2>Keyboard Shortcuts &amp; Native Menu</h2>
             <p class="section-subtitle">
-              All controls live inside the native <strong>Navigate</strong> menu
-              and capture-phase key listeners so shortcuts stay reliable across
-              pages.
+              All controls live inside the native <strong>Navigate</strong> and
+              <strong>Help</strong> menus alongside capture-phase key listeners
+              so shortcuts stay reliable across pages.
             </p>
           </div>
 
@@ -901,12 +943,146 @@
                   <td>Hand off the current page URL to your system browser</td>
                 </tr>
                 <tr>
+                  <td>Keyboard Shortcuts</td>
+                  <td><kbd>F1</kbd></td>
+                  <td>Open the shortcuts guide (also in <strong>Help</strong>; auto-opens on first launch)</td>
+                </tr>
+                <tr>
+                  <td>Check for Updates...</td>
+                  <td><code>Help &rarr; Check for Updates...</code></td>
+                  <td>Check GitHub Releases for newer app versions</td>
+                </tr>
+                <tr>
+                  <td>About Rongyok Desk</td>
+                  <td><code>Help &rarr; About Rongyok Desk</code></td>
+                  <td>Show app version, OS/architecture, and copyright details</td>
+                </tr>
+                <tr>
                   <td>Quit</td>
                   <td><kbd>Ctrl</kbd> + <kbd>Q</kbd></td>
                   <td>Save window placement and exit Rongyok Desk</td>
                 </tr>
               </tbody>
             </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="privacy">
+        <div class="container">
+          <div class="section-header">
+            <p class="section-eyebrow">Transparency</p>
+            <h2>Privacy &amp; Security</h2>
+            <p class="section-subtitle">
+              Rongyok Desk keeps a strict boundary between the desktop shell and
+              <code>rongyok.com</code>, with zero app-level tracking.
+            </p>
+          </div>
+
+          <div class="privacy-grid">
+            <article class="card feature-card">
+              <div class="feature-icon" aria-hidden="true">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                  <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                  <path d="m1 1 22 22" />
+                </svg>
+              </div>
+              <h3>No App Telemetry</h3>
+              <p>
+                Rongyok Desk collects no analytics, usage tracking, or crash
+                telemetry. The only app-initiated request outside
+                <code>rongyok.com</code> checks GitHub Releases
+                (<code>latest.json</code>) for updates (allowlisted to
+                <code>EEMEEMMEEx/rongyok-desk</code>).
+              </p>
+            </article>
+
+            <article class="card feature-card">
+              <div class="feature-icon" aria-hidden="true">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+              </div>
+              <h3>App vs. Website Boundary</h3>
+              <p>
+                All local files stay on your device
+                (<code>&lt;app_local_data_dir&gt;</code> for WebView session
+                storage, <code>window-placement.txt</code>, and
+                <code>onboarding-seen.txt</code>). Any cookies or site-level
+                tracking come solely from <code>rongyok.com</code>, just as in
+                a standard browser.
+              </p>
+            </article>
+
+            <article class="card feature-card">
+              <div class="feature-icon" aria-hidden="true">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <rect width="16" height="16" x="4" y="4" rx="2" />
+                  <rect width="6" height="6" x="9" y="9" rx="1" />
+                  <path d="M15 2v2" />
+                  <path d="M9 2v2" />
+                  <path d="M20 15h2" />
+                  <path d="M20 9h2" />
+                  <path d="M15 20v2" />
+                  <path d="M9 20v2" />
+                  <path d="M2 15h2" />
+                  <path d="M2 9h2" />
+                </svg>
+              </div>
+              <h3>No Native API Exposure</h3>
+              <p>
+                <code>withGlobalTauri</code> is disabled with empty Tauri IPC
+                capabilities (<code>{}</code>), so remote web pages cannot call
+                native Tauri APIs or read local files. The Linux Flatpak build
+                also runs without home-directory access.
+              </p>
+            </article>
+
+            <article class="card feature-card">
+              <div class="feature-icon" aria-hidden="true">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />
+                  <path d="m9 12 2 2 4-4" />
+                </svg>
+              </div>
+              <h3>Domain Lock &amp; Verified Updates</h3>
+              <p>
+                Only <code>rongyok.com</code> and <code>*.rongyok.com</code>
+                load inside the window; external links open in your default
+                browser, and in-app updates verify cryptographic signatures
+                before installing.
+              </p>
+            </article>
           </div>
         </div>
       </section>
@@ -930,6 +1106,7 @@
           <a href="#features">Features</a>
           <a href="#downloads">Platforms</a>
           <a href="#install">Install Guide</a>
+          <a href="#privacy">Privacy</a>
           <a
             href="https://rongyok.com/"
             target="_blank"

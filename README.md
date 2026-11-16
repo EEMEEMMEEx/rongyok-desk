@@ -24,6 +24,8 @@
 
 Rongyok Desk is a lightweight desktop app built for anyone who wants **https://rongyok.com/** in its own window instead of a browser tab. It opens straight to the site in a `1280×800` window (minimum `520×400`) and keeps your session signed in between launches. External links open in your default web browser, so this window stays focused on Rongyok.
 
+Because it uses the system WebView without full-browser UI, extensions, or extra tabs, it uses **~1.6×–1.8× less RAM** than a clean single-tab browser session (~157 MB vs ~255–275 MB Private Working Set measured on Windows against warm Edge and Brave), and **~2.2×–4.3× less** on a fresh browser launch (~163 MB vs ~355–703 MB).
+
 ---
 
 ## Download (`v1.2.0`)
@@ -91,6 +93,15 @@ flatpak run com.rongyok.ssb
 
 ---
 
+## Privacy & Security
+
+- **No app telemetry** — Rongyok Desk collects no analytics, usage tracking, or crash telemetry. The only app-initiated request outside `rongyok.com` checks GitHub Releases (`latest.json`) for updates (allowlisted to `EEMEEMMEEx/rongyok-desk`).
+- **App vs. website boundary** — All local files stay on your device (`<app_local_data_dir>` for WebView session storage, `window-placement.txt`, and `onboarding-seen.txt`). Any cookies or site-level tracking come solely from `rongyok.com`, just as in a standard browser.
+- **No native API exposure** — `withGlobalTauri` is disabled with empty Tauri IPC capabilities (`{}`), so web pages cannot call native Tauri APIs or access local files (and the Flatpak build has no home-directory permission).
+- **Domain lock & verified updates** — Only `rongyok.com` and `*.rongyok.com` load inside the window; external links open in your default browser, and in-app updates verify cryptographic signatures before installing.
+
+---
+
 ## Keyboard Shortcuts
 
 | Action | Shortcut | Notes |
@@ -101,4 +112,7 @@ flatpak run com.rongyok.ssb
 | Go to `rongyok.com` | `Ctrl+H` | Opens `https://rongyok.com/` (`START_URL`) |
 | Full screen | `F11` | Toggles fullscreen |
 | Open this page in browser | Menu only | Opens current page in system browser |
+| Keyboard Shortcuts | `F1` | Also in **Help** menu (opens on first launch) |
+| Check for Updates... | Menu only | In **Help** menu (checks GitHub Releases) |
+| About Rongyok Desk | Menu only | In **Help** menu (shows version and platform) |
 | Quit | `Ctrl+Q` | Closes app |

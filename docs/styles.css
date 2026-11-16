@@ -235,6 +235,20 @@ kbd {
   height: 19px;
 }
 
+.lang-btn {
+  width: auto;
+  padding: 0 0.68rem;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.lang-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
 :root[data-theme="dark"] .icon-moon,
 :root[data-theme="light"] .icon-sun {
   display: none;
@@ -509,6 +523,12 @@ kbd {
 .feature-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.15rem;
+}
+
+.privacy-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1.15rem;
 }
 
@@ -876,7 +896,8 @@ kbd {
   }
 
   .feature-grid,
-  .platform-grid {
+  .platform-grid,
+  .privacy-grid {
     grid-template-columns: 1fr;
   }
 

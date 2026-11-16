@@ -16,7 +16,7 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::utils::config::BackgroundThrottlingPolicy;
 use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 use tauri_plugin_updater::UpdaterExt;
 
 /// Authoritative app identity and version metadata compiled from Cargo.
@@ -39,6 +39,10 @@ const UPDATE_REPO_PREFIX: &str = "/EEMEEMMEEx/rongyok-desk/";
 const UPDATE_ACTION_OPEN_DOWNLOAD: &str = "open-update-download";
 const UPDATE_ACTION_CHECK: &str = "check-updates";
 const UPDATE_NOTES_MAX_CHARS: usize = 600;
+const MACOS_SIGNED_BUILD: bool = matches!(
+    option_env!("RONGYOK_MACOS_SIGNED"),
+    Some(value) if matches!(value.as_bytes(), b"1" | b"true")
+);
 const MAX_MANIFEST_BYTES: usize = 1024 * 1024;
 const MAX_MANIFEST_REDIRECTS: usize = 5;
 
@@ -1540,7 +1544,7 @@ struct UpdateModalPayload {
 
 #[derive(Clone)]
 enum PendingUpdateAction {
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     InApp {
         update: Box<tauri_plugin_updater::Update>,
         fallback_url: Option<Url>,
@@ -1820,6 +1824,11 @@ fn select_download_url(
     None
 }
 
+/// Enable in-app `tauri-plugin-updater` on Windows and on Developer-ID-signed/notarized macOS builds.
+fn supports_in_app_updater(os: &str, macos_signed: bool) -> bool {
+    os == "windows" || (os == "macos" && macos_signed)
+}
+
 fn eval_update_modal(app: &AppHandle, payload: &UpdateModalPayload) {
     let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
         return;
@@ -2052,56 +2061,59 @@ fn trigger_update_check(
         let mut guard = CheckGuard::new(Arc::clone(&state));
         let mut resolved: Option<ResolvedCheck> = None;
 
-        #[cfg(target_os = "windows")]
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
         {
-            if let Ok(updater) = app
-                .updater_builder()
-                .timeout(Duration::from_secs(10))
-                .configure_client(|builder| builder.redirect(manifest_redirect_policy()))
-                .build()
-            {
-                match updater.check().await {
-                    Ok(Some(native_update)) => {
-                        if !is_allowed_update_url(&native_update.download_url) {
-                            resolved = Some(ResolvedCheck::Error {
-                                version: None,
-                                message: "Blocked an unverified update download URL.".to_string(),
-                            });
-                        } else {
-                            let fallback_url = serde_json::from_value::<LatestReleaseManifest>(
-                                native_update.raw_json.clone(),
-                            )
-                            .ok()
-                            .and_then(|manifest| {
-                                select_download_url(
-                                    &manifest,
-                                    std::env::consts::OS,
-                                    std::env::consts::ARCH,
-                                    is_msi_install(),
+            if supports_in_app_updater(std::env::consts::OS, MACOS_SIGNED_BUILD) {
+                if let Ok(updater) = app
+                    .updater_builder()
+                    .timeout(Duration::from_secs(10))
+                    .configure_client(|builder| builder.redirect(manifest_redirect_policy()))
+                    .build()
+                {
+                    match updater.check().await {
+                        Ok(Some(native_update)) => {
+                            if !is_allowed_update_url(&native_update.download_url) {
+                                resolved = Some(ResolvedCheck::Error {
+                                    version: None,
+                                    message: "Blocked an unverified update download URL."
+                                        .to_string(),
+                                });
+                            } else {
+                                let fallback_url = serde_json::from_value::<LatestReleaseManifest>(
+                                    native_update.raw_json.clone(),
                                 )
-                            });
-                            let version = native_update.version.clone();
-                            let notes = truncate_plain_notes(
-                                native_update.body.as_deref(),
-                                UPDATE_NOTES_MAX_CHARS,
-                            );
-                            resolved = Some(ResolvedCheck::Available {
-                                version,
-                                notes,
-                                install_mode: "install",
-                                pending: PendingUpdateAction::InApp {
-                                    update: Box::new(native_update),
-                                    fallback_url,
-                                },
-                            });
+                                .ok()
+                                .and_then(|manifest| {
+                                    select_download_url(
+                                        &manifest,
+                                        std::env::consts::OS,
+                                        std::env::consts::ARCH,
+                                        is_msi_install(),
+                                    )
+                                });
+                                let version = native_update.version.clone();
+                                let notes = truncate_plain_notes(
+                                    native_update.body.as_deref(),
+                                    UPDATE_NOTES_MAX_CHARS,
+                                );
+                                resolved = Some(ResolvedCheck::Available {
+                                    version,
+                                    notes,
+                                    install_mode: "install",
+                                    pending: PendingUpdateAction::InApp {
+                                        update: Box::new(native_update),
+                                        fallback_url,
+                                    },
+                                });
+                            }
                         }
-                    }
-                    Ok(None) => {
-                        resolved = Some(ResolvedCheck::UpToDate { version: None });
-                    }
-                    Err(_) => {
-                        // Fall back cleanly to Phase 1 manifest check (e.g. unsigned release
-                        // without `platforms` entries or unsupported bundle install type).
+                        Ok(None) => {
+                            resolved = Some(ResolvedCheck::UpToDate { version: None });
+                        }
+                        Err(_) => {
+                            // Fall back cleanly to Phase 1 manifest check (e.g. unsigned release
+                            // without `platforms` entries or unsupported bundle install type).
+                        }
                     }
                 }
             }
@@ -2194,7 +2206,7 @@ fn handle_update_download_action(app: AppHandle, state: Arc<UpdateController>) {
             }
             close_update_modal(&app);
         }
-        #[cfg(target_os = "windows")]
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
         PendingUpdateAction::InApp {
             update,
             fallback_url,
@@ -4050,5 +4062,15 @@ mod tests {
         .unwrap();
         assert!(payload_json.contains(r#""backgroundProgress":true"#));
         assert!(payload_json.contains(r#""deferIfBusy":true"#));
+    }
+
+    #[test]
+    fn in_app_updater_requires_windows_or_signed_macos() {
+        assert!(supports_in_app_updater("windows", false));
+        assert!(supports_in_app_updater("windows", true));
+        assert!(!supports_in_app_updater("macos", false));
+        assert!(supports_in_app_updater("macos", true));
+        assert!(!supports_in_app_updater("linux", false));
+        assert!(!supports_in_app_updater("linux", true));
     }
 }

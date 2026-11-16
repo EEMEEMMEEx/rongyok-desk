@@ -66,6 +66,58 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
+      - name: Configure Windows Authenticode signing (if secrets set)
+        id: win_sign
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
+          WINDOWS_TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE)) {
+            Add-Content -Path $env:GITHUB_OUTPUT -Value "extra_args="
+            exit 0
+          }
+          $pfxPath = Join-Path $env:RUNNER_TEMP "win-sign.pfx"
+          try {
+            [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE.Trim()))
+            $sec = if ([string]::IsNullOrEmpty($env:WINDOWS_CERTIFICATE_PASSWORD)) {
+              New-Object System.Security.SecureString
+            } else {
+              ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -Force -AsPlainText
+            }
+            $cert = Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My -Password $sec
+          } finally {
+            Remove-Item -Path $pfxPath -Force -ErrorAction SilentlyContinue
+          }
+          $thumb = if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_THUMBPRINT)) {
+            $env:WINDOWS_CERTIFICATE_THUMBPRINT.Trim()
+          } else {
+            ($cert | Select-Object -First 1).Thumbprint
+          }
+          if ([string]::IsNullOrWhiteSpace($thumb)) {
+            throw "Windows signing certificate thumbprint could not be resolved"
+          }
+          $tsUrl = if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_TIMESTAMP_URL)) {
+            $env:WINDOWS_TIMESTAMP_URL.Trim()
+          } else {
+            "http://timestamp.digicert.com"
+          }
+          $cfgPath = Join-Path $env:RUNNER_TEMP "tauri.win-sign.json"
+          @{
+            bundle = @{
+              windows = @{
+                certificateThumbprint = $thumb
+                digestAlgorithm = "sha256"
+                timestampUrl = $tsUrl
+                tsp = $true
+              }
+            }
+          } | ConvertTo-Json -Depth 5 | Set-Content -Path $cfgPath -Encoding UTF8
+          $cfgArg = $cfgPath.Replace('\', '/')
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "extra_args=--config $cfgArg"
+
       - name: Build the installers
         uses: tauri-apps/tauri-action@v0
         env:
@@ -76,7 +128,7 @@ jobs:
           # Build bundles only; `publish-release` creates the release & latest.json.
           projectPath: ${{ steps.app.outputs.path }}
           includeUpdaterJson: false
-          args: --target x86_64-pc-windows-msvc
+          args: --target x86_64-pc-windows-msvc ${{ steps.win_sign.outputs.extra_args }}
 
       - name: Verify Windows bundles exist
         shell: bash
@@ -143,6 +195,61 @@ jobs:
             ${{ steps.app.outputs.path }}/target
           key: ${{ runner.os }}-${{ matrix.arch }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-${{ matrix.arch }}-cargo-
+
+      - name: Configure macOS signing & notarization (if secrets set)
+        shell: bash
+        env:
+          CFG_APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          CFG_APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          CFG_APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          CFG_APPLE_ID: ${{ secrets.APPLE_ID }}
+          CFG_APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          CFG_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CFG_APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          CFG_APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          CFG_APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+        run: |
+          set -euo pipefail
+          # Only export non-empty variables; tauri-bundler fails if empty APPLE_* keys exist.
+          if [ -z "$CFG_APPLE_CERTIFICATE" ]; then
+            exit 0
+          fi
+          {
+            echo "APPLE_CERTIFICATE<<EOF_APPLE_CERT"
+            printf '%s\n' "$CFG_APPLE_CERTIFICATE"
+            echo "EOF_APPLE_CERT"
+            echo "APPLE_CERTIFICATE_PASSWORD=${CFG_APPLE_CERTIFICATE_PASSWORD:-}"
+          } >> "$GITHUB_ENV"
+
+          has_identity=false
+          if [ -n "$CFG_APPLE_SIGNING_IDENTITY" ]; then
+            echo "APPLE_SIGNING_IDENTITY=$CFG_APPLE_SIGNING_IDENTITY" >> "$GITHUB_ENV"
+            has_identity=true
+          fi
+
+          has_notary=false
+          if [ -n "$CFG_APPLE_ID" ] && [ -n "$CFG_APPLE_PASSWORD" ] && [ -n "$CFG_APPLE_TEAM_ID" ]; then
+            echo "APPLE_ID=$CFG_APPLE_ID" >> "$GITHUB_ENV"
+            echo "APPLE_PASSWORD=$CFG_APPLE_PASSWORD" >> "$GITHUB_ENV"
+            echo "APPLE_TEAM_ID=$CFG_APPLE_TEAM_ID" >> "$GITHUB_ENV"
+            has_notary=true
+          elif [ -n "$CFG_APPLE_API_KEY" ] && [ -n "$CFG_APPLE_API_ISSUER" ] && [ -n "$CFG_APPLE_API_KEY_CONTENT" ]; then
+            p8_path="${RUNNER_TEMP}/AuthKey_${CFG_APPLE_API_KEY}.p8"
+            if printf '%s' "$CFG_APPLE_API_KEY_CONTENT" | grep -q "BEGIN PRIVATE KEY"; then
+              printf '%s\n' "$CFG_APPLE_API_KEY_CONTENT" > "$p8_path"
+            else
+              printf '%s' "$CFG_APPLE_API_KEY_CONTENT" | base64 --decode > "$p8_path"
+            fi
+            chmod 600 "$p8_path"
+            echo "APPLE_API_KEY=$CFG_APPLE_API_KEY" >> "$GITHUB_ENV"
+            echo "APPLE_API_ISSUER=$CFG_APPLE_API_ISSUER" >> "$GITHUB_ENV"
+            echo "APPLE_API_KEY_PATH=$p8_path" >> "$GITHUB_ENV"
+            has_notary=true
+          fi
+
+          if [ "$has_identity" = true ] && [ "$has_notary" = true ]; then
+            echo "RONGYOK_MACOS_SIGNED=1" >> "$GITHUB_ENV"
+          fi
 
       - name: Build the disk image
         uses: tauri-apps/tauri-action@v0
@@ -299,9 +406,43 @@ jobs:
                   raise SystemExit(f"Empty updater signature file: {sig_path}")
               return sig_text
 
+          def size_bytes(asset_name: str) -> int:
+              return (stage_dir / asset_name).stat().st_size
+
           def size_mb_label(asset_name: str) -> str:
-              size_bytes = (stage_dir / asset_name).stat().st_size
-              return f"{size_bytes / 1_000_000:.2f} MB"
+              return f"{size_bytes(asset_name) / 1_000_000:.2f} MB"
+
+          def extract_changelog_notes(changelog_path: pathlib.Path, version: str):
+              if not changelog_path.is_file():
+                  return None, None
+              content = changelog_path.read_text(encoding="utf-8")
+              import re
+              heading_re = re.compile(
+                  rf"^##\s+\[?v?{re.escape(version)}\]?(?:\s*-\s*([^\r\n]+))?\s*$",
+                  re.MULTILINE,
+              )
+              match = heading_re.search(content)
+              if not match:
+                  return None, None
+              start = match.end()
+              next_heading = re.search(r"^##\s+\[?", content[start:], re.MULTILINE)
+              body = content[start : start + next_heading.start()] if next_heading else content[start:]
+              md_body = body.strip()
+              if not md_body:
+                  return None, None
+              plain_lines = []
+              for raw_line in md_body.splitlines():
+                  s = raw_line.strip()
+                  if not s:
+                      continue
+                  s = re.sub(r"^###\s+", "", s)
+                  s = re.sub(r"\*\*(.+?)\*\*", r"\1", s)
+                  s = s.replace("`", "")
+                  plain_lines.append(s)
+              plain_text = "\n".join(plain_lines)
+              if len(plain_text) > 580:
+                  plain_text = plain_text[:577].rstrip() + "..."
+              return md_body, plain_text
 
           base_url = f"https://github.com/{repo}/releases/download/{tag}"
 
@@ -353,10 +494,19 @@ jobs:
                   "signature": read_sig(mac_x64_sig),
               }
 
+          md_notes, plain_notes = extract_changelog_notes(app_dir / "CHANGELOG.md", conf_version)
+          fallback_notes = f"Rongyok Desk {tag} (Windows, macOS, Linux Flatpak)."
+          manifest_notes = plain_notes or fallback_notes
+          if md_notes:
+              (artifacts_root / "release-notes.md").write_text(
+                  md_notes + "\n", encoding="utf-8"
+              )
+
+          pub_ts = datetime.datetime.now(datetime.timezone.utc)
           manifest = {
               "version": conf_version,
-              "notes": f"Rongyok Desk {tag} (Windows, macOS, Linux Flatpak).",
-              "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "notes": manifest_notes,
+              "pub_date": pub_ts.strftime("%Y-%m-%dT%H:%M:%SZ"),
               "platforms": platforms,
               "downloads": {
                   "windows-x86_64-nsis": f"{base_url}/{exe_name}",
@@ -370,10 +520,18 @@ jobs:
           latest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
           json.loads(latest_path.read_text(encoding="utf-8"))
 
+          installer_names = [exe_name, msi_name, mac_arm_name, mac_x64_name, flatpak_name]
+          sizes_bytes = [size_bytes(name) for name in installer_names]
+          size_range = f"{min(sizes_bytes) / 1_000_000:.2f} – {max(sizes_bytes) / 1_000_000:.2f} MB"
+          summary_line = manifest_notes.splitlines()[0].lstrip("- ").strip() if plain_notes else fallback_notes
+
           # Keep docs sync metadata outside dist-release/ so gh release does not upload it.
           meta = {
               "tag": tag,
               "version": conf_version,
+              "pub_date_short": pub_ts.strftime("%Y-%m-%d"),
+              "summary_line": summary_line,
+              "size_range": size_range,
               "app_dir": app_dir.as_posix(),
               "assets": {
                   "exe": {"name": exe_name, "size": size_mb_label(exe_name)},
@@ -398,13 +556,17 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          notes_args=(--generate-notes)
+          if [ -s release-artifacts/release-notes.md ]; then
+            notes_args=(--notes-file release-artifacts/release-notes.md)
+          fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist-release/* --clobber
-            gh release edit "$TAG" --draft=false --latest --title "Rongyok Desk $TAG"
+            gh release edit "$TAG" --draft=false --latest --title "Rongyok Desk $TAG" "${notes_args[@]}"
           else
             gh release create "$TAG" dist-release/* \
               --title "Rongyok Desk $TAG" \
-              --generate-notes \
+              "${notes_args[@]}" \
               --latest
           fi
 
@@ -544,6 +706,12 @@ jobs:
                   rf"\g<1>{ver}\2",
                   text,
               )
+              text = re.sub(
+                  r"(<dt>Package Size</dt>\s*<dd>)\d+\.\d+\s*[–-]\s*\d+\.\d+\s+MB(</dd>)",
+                  rf"\g<1>{meta['size_range']}\2",
+                  text,
+                  flags=re.DOTALL,
+              )
 
               card_replacements = [
                   (
@@ -582,10 +750,25 @@ jobs:
                   text = re.sub(name_pat, new_name, text)
               return text
 
+          def update_metainfo(text: str) -> str:
+              if f'<release version="{ver}"' in text:
+                  return text
+              import html
+              summary_xml = html.escape(meta.get("summary_line") or f"Release {tag}.")
+              entry = (
+                  f'    <release version="{ver}" date="{meta["pub_date_short"]}">\n'
+                  f"      <description>\n"
+                  f"        <p>{summary_xml}</p>\n"
+                  f"      </description>\n"
+                  f"    </release>"
+              )
+              return re.sub(r"(<releases>\s*\n)", rf"\1{entry}\n", text, count=1)
+
           targets = [
               (app_dir / "README.md", update_markdown),
               (app_dir / "README.th.md", update_markdown),
               (app_dir / "docs" / "index.html", update_docs_html),
+              (app_dir / "flatpak" / "com.rongyok.ssb.metainfo.xml", update_metainfo),
           ]
           updated = []
           for path, updater in targets:

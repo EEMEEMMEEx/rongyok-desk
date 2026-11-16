@@ -33,7 +33,27 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
-    <release version="1.0.0" date="2026-01-01">
+    <release version="1.2.0" date="2026-11-16">
+      <description>
+        <p>Added in-app Check for Updates modal, strict release URL verification, and signed updater support.</p>
+      </description>
+    </release>
+    <release version="1.1.0" date="2026-11-16">
+      <description>
+        <p>Added Keyboard Shortcuts onboarding modal and About Rongyok Desk dialog.</p>
+      </description>
+    </release>
+    <release version="1.0.2" date="2026-11-15">
+      <description>
+        <p>Updated macOS and GNOME 49 Flatpak release packaging.</p>
+      </description>
+    </release>
+    <release version="1.0.1" date="2026-11-15">
+      <description>
+        <p>Initial release of Rongyok Desk for rongyok.com.</p>
+      </description>
+    </release>
+    <release version="1.0.0" date="2026-11-01">
       <description>
         <p>First release.</p>
       </description>
