@@ -413,7 +413,7 @@
   if (instHeader) {
     captureText(instHeader.querySelector(".section-eyebrow"), "ขั้นตอนติดตั้ง");
     captureText(instHeader.querySelector("h2"), "วิธีติดตั้งแยกตามระบบปฏิบัติการ");
-    captureText(instHeader.querySelector(".section-subtitle"), "เลือกระบบปฏิบัติการด้านล่างเพื่อดูขั้นตอนติดตั้งและคำแนะนำเมื่อเปิดใช้งาน v" + cleanVer + " ครั้งแรก");
+    captureText(instHeader.querySelector(".section-subtitle"), "เลือกระบบปฏิบัติการด้านล่างเพื่อดูขั้นตอนติดตั้งและการตรวจสอบลายเซ็นสำหรับรุ่น v" + cleanVer);
   }
 
   var winItems = document.querySelectorAll("#panel-windows li");
@@ -431,13 +431,12 @@
     ") จะดาวน์โหลด Microsoft Edge WebView2 Runtime ให้อัตโนมัติหากเครื่องยังไม่มี"
   ]);
   captureAndApply(winItems[2], [
-    { tag: "strong", text: "คำเตือน SmartScreen ครั้งแรก:" },
-    " เนื่องจากไฟล์ ",
+    { tag: "strong", text: "ตัวติดตั้งลงนามดิจิทัลแล้ว:" },
+    " ไฟล์ติดตั้ง Windows รุ่น ",
     { tag: "code", text: rawVer },
-    " ยังไม่ได้ลงนามดิจิทัล Windows SmartScreen อาจแจ้งเตือน ให้กด ",
-    { tag: "strong", text: "More info" },
-    " แล้วเลือก ",
-    { tag: "strong", text: "Run anyway" }
+    " ได้รับการลงนามดิจิทัลแล้ว และสามารถตรวจสอบความถูกต้องเพิ่มเติมได้จากไฟล์ ",
+    { tag: "code", text: "SHA256SUMS.txt" },
+    " ในหน้า Release ก่อนเปิดใช้งาน"
   ]);
 
   var macItems = document.querySelectorAll("#panel-macos li");
@@ -459,16 +458,12 @@
     { tag: "strong", text: "Applications" }
   ]);
   captureAndApply(macItems[2], [
-    { tag: "strong", text: "กดอนุญาต Gatekeeper ครั้งแรก:" },
-    " เนื่องจากแอปยังไม่ได้ลงนาม ให้คลิกขวา (หรือ Control-click) ที่ ",
+    { tag: "strong", text: "เปิดใช้งานได้ทันที:" },
+    " ",
     { tag: "strong", text: "Rongyok Desk.app" },
-    " → ",
-    { tag: "strong", text: "Open" },
-    " → ",
-    { tag: "strong", text: "Open" },
-    " (หรือไปกดอนุญาตที่ ",
-    { tag: "strong", text: "System Settings → Privacy & Security → Open Anyway" },
-    ")"
+    " ได้รับการลงนามดิจิทัลและผ่านการ notarized สำหรับ macOS Gatekeeper แล้ว สามารถเปิดใช้งานจาก ",
+    { tag: "strong", text: "Applications" },
+    " หรือ Spotlight ได้โดยตรง"
   ]);
 
   var linuxItems = document.querySelectorAll("#panel-linux li");

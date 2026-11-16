@@ -46,17 +46,17 @@ Rongyok Desk เป็นแอปเดสก์ท็อปขนาดเบ�
 
 ## วิธีติดตั้ง
 
-> **หมายเหตุ:** ตัวติดตั้ง `v1.3.1` ยังไม่ได้ลงนามดิจิทัล (unsigned) ดังนั้น Windows SmartScreen หรือ macOS Gatekeeper จะแสดงคำเตือนให้กดยืนยันเมื่อเปิดใช้งานครั้งแรก
+> **หมายเหตุ:** ตัวติดตั้ง `v1.3.1` สำหรับ Windows และ macOS ได้รับการลงนามดิจิทัลแล้ว (และรุ่น macOS ผ่านการ notarized แล้ว) นอกจากนี้คุณยังสามารถตรวจสอบความถูกต้องของไฟล์ดาวน์โหลดได้จาก [`SHA256SUMS.txt`](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/SHA256SUMS.txt)
 
 ### Windows
 1. ดาวน์โหลด [Rongyok.Desk_1.3.1_x64-setup.exe](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.3.1_x64-setup.exe) (ติดตั้งเฉพาะผู้ใช้ปัจจุบัน และดาวน์โหลด Microsoft Edge WebView2 Runtime ให้อัตโนมัติหากยังไม่มี) หรือ [Rongyok.Desk_1.3.1_x64_en-US.msi](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.3.1_x64_en-US.msi)
-2. เปิดรันตัวติดตั้ง
-3. หาก **Windows SmartScreen** แจ้งเตือน ให้กด **More info** แล้วเลือก **Run anyway**
+2. เปิดรันตัวติดตั้งและทำตามขั้นตอนบนหน้าจอ
+3. เปิดใช้งาน **Rongyok Desk** จาก Start Menu หรือทางลัดบนหน้าจอ
 
 ### macOS (`10.15+`)
 1. ดาวน์โหลด [Rongyok.Desk_1.3.1_aarch64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.3.1_aarch64.dmg) (Apple Silicon) หรือ [Rongyok.Desk_1.3.1_x64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.3.1_x64.dmg) (Intel)
 2. เปิดไฟล์ `.dmg` แล้วลาก **Rongyok Desk.app** ไปวางใน **Applications**
-3. เมื่อเปิดใช้งานครั้งแรก ให้ **กด Control ค้างแล้วคลิก (หรือคลิกขวา)** ที่แอป เลือก **Open** → **Open** (หรือไปกดอนุญาตที่ **System Settings → Privacy & Security → Open Anyway**)
+3. เปิดใช้งาน **Rongyok Desk** จาก **Applications** หรือ Spotlight
 
 ### Linux (`x86_64`)
 1. ดาวน์โหลด [Rongyok-Desk-1.3.1-x86_64.flatpak](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok-Desk-1.3.1-x86_64.flatpak)

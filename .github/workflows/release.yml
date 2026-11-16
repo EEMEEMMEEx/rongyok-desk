@@ -98,7 +98,7 @@ jobs:
           $thumb = if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_THUMBPRINT)) {
             $env:WINDOWS_CERTIFICATE_THUMBPRINT.Trim()
           } else {
-            ($cert | Select-Object -First 1).Thumbprint
+            ($cert | Where-Object { $_.HasPrivateKey } | Select-Object -First 1).Thumbprint
           }
           if ([string]::IsNullOrWhiteSpace($thumb)) {
             throw "Windows signing certificate thumbprint could not be resolved"
@@ -136,6 +136,8 @@ jobs:
 
       - name: Verify Windows bundles exist
         shell: bash
+        env:
+          WIN_SIGN_EXTRA_ARGS: ${{ steps.win_sign.outputs.extra_args }}
         run: |
           set -euo pipefail
           compgen -G "${{ steps.app.outputs.path }}/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe" >/dev/null
@@ -143,6 +145,20 @@ jobs:
           if node -e 'const fs=require("fs"), c=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.exit(c.bundle && c.bundle.createUpdaterArtifacts ? 0 : 1)' "${{ steps.app.outputs.path }}/tauri.conf.json"; then
             compgen -G "${{ steps.app.outputs.path }}/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe.sig" >/dev/null
             compgen -G "${{ steps.app.outputs.path }}/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi.sig" >/dev/null
+          fi
+          if [ -n "${WIN_SIGN_EXTRA_ARGS:-}" ]; then
+            signtool_bin="$(command -v signtool.exe || command -v signtool || true)"
+            if [ -z "$signtool_bin" ]; then
+              signtool_bin="$(find "/c/Program Files (x86)/Windows Kits/10/bin" -path "*/x64/signtool.exe" 2>/dev/null | sort -V | tail -n 1 || true)"
+            fi
+            [ -n "$signtool_bin" ] || { echo "signtool.exe not found"; exit 1; }
+            for f in \
+              "${{ steps.app.outputs.path }}/target/x86_64-pc-windows-msvc/release/bundle/nsis/"*.exe \
+              "${{ steps.app.outputs.path }}/target/x86_64-pc-windows-msvc/release/bundle/msi/"*.msi; do
+              echo "Verifying Authenticode signature: $f"
+              win_f="$(cygpath -w "$f" 2>/dev/null || printf '%s' "$f")"
+              MSYS_NO_PATHCONV=1 "$signtool_bin" verify /pa "$win_f"
+            done
           fi
 
       # Keep installers (and any .sig files when updater signing is enabled).
@@ -280,6 +296,20 @@ jobs:
             compgen -G "${{ steps.app.outputs.path }}/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz" >/dev/null
             compgen -G "${{ steps.app.outputs.path }}/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig" >/dev/null
           fi
+          if [ "${RONGYOK_MACOS_SIGNED:-}" = "1" ]; then
+            if compgen -G "${{ steps.app.outputs.path }}/target/${{ matrix.target }}/release/bundle/macos/*.app" >/dev/null; then
+              for app in "${{ steps.app.outputs.path }}/target/${{ matrix.target }}/release/bundle/macos/"*.app; do
+                echo "Verifying macOS app signature: $app"
+                codesign --verify --deep --strict --verbose=2 "$app"
+                xcrun stapler validate "$app"
+              done
+            fi
+            for dmg in "${{ steps.app.outputs.path }}/target/${{ matrix.target }}/release/bundle/dmg/"*.dmg; do
+              echo "Verifying macOS dmg signature and stapled ticket: $dmg"
+              codesign --verify --strict --verbose=2 "$dmg"
+              xcrun stapler validate "$dmg"
+            done
+          fi
 
       - name: Upload the disk image
         uses: actions/upload-artifact@v4
@@ -361,6 +391,7 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           import datetime
+          import hashlib
           import json
           import os
           import pathlib
@@ -527,6 +558,19 @@ jobs:
           latest_path = stage_dir / "latest.json"
           latest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
           json.loads(latest_path.read_text(encoding="utf-8"))
+
+          checksum_lines = []
+          for asset_file in sorted(stage_dir.iterdir()):
+              if not asset_file.is_file() or asset_file.name == "SHA256SUMS.txt":
+                  continue
+              digest = hashlib.sha256()
+              with asset_file.open("rb") as fh:
+                  for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              checksum_lines.append(f"{digest.hexdigest()}  {asset_file.name}")
+          (stage_dir / "SHA256SUMS.txt").write_text(
+              "\n".join(checksum_lines) + "\n", encoding="utf-8", newline="\n"
+          )
 
           installer_names = [exe_name, msi_name, mac_arm_name, mac_x64_name, flatpak_name]
           sizes_bytes = [size_bytes(name) for name in installer_names]
@@ -700,12 +744,12 @@ jobs:
                   text,
               )
               text = re.sub(
-                  r"(unsigned v)\d+\.\d+\.\d+( builds\.)",
+                  r"(signature verification details for v)\d+\.\d+\.\d+( builds\.)",
                   rf"\g<1>{ver}\2",
                   text,
               )
               text = re.sub(
-                  r"(<code>v)\d+\.\d+\.\d+(</code> binaries are unsigned)",
+                  r"(<code>v)\d+\.\d+\.\d+(</code> Windows installers are digitally signed\.)",
                   rf"\g<1>{ver}\2",
                   text,
               )

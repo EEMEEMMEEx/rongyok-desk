@@ -46,17 +46,17 @@ Because it uses the system WebView without full-browser UI, extensions, or extra
 
 ## Installation
 
-> **Note:** The `v1.3.1` installers are unsigned, so Windows SmartScreen or macOS Gatekeeper will ask you to confirm on first launch.
+> **Note:** The `v1.3.1` Windows and macOS installers are digitally signed (and macOS builds are notarized). You can also verify download integrity with [`SHA256SUMS.txt`](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/SHA256SUMS.txt).
 
 ### Windows
 1. Download [Rongyok.Desk_1.3.1_x64-setup.exe](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.3.1_x64-setup.exe) (installs for your user account and fetches Microsoft Edge WebView2 Runtime if needed) or [Rongyok.Desk_1.3.1_x64_en-US.msi](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.3.1_x64_en-US.msi).
-2. Run the installer.
-3. If **Windows SmartScreen** warns you, click **More info** then **Run anyway**.
+2. Run the installer and follow the setup wizard.
+3. Launch **Rongyok Desk** from the Start Menu or Desktop shortcut.
 
 ### macOS (`10.15+`)
 1. Download [Rongyok.Desk_1.3.1_aarch64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.3.1_aarch64.dmg) (Apple Silicon) or [Rongyok.Desk_1.3.1_x64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.3.1_x64.dmg) (Intel).
 2. Open the `.dmg` and drag **Rongyok Desk.app** into **Applications**.
-3. On first launch, **Control-click (right-click)** the app, then choose **Open** → **Open** (or allow it in **System Settings → Privacy & Security → Open Anyway**).
+3. Launch **Rongyok Desk** from **Applications** or Spotlight.
 
 ### Linux (`x86_64`)
 1. Download [Rongyok-Desk-1.3.1-x86_64.flatpak](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok-Desk-1.3.1-x86_64.flatpak).
