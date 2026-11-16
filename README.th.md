@@ -5,18 +5,18 @@
   <p><a href="README.md">English</a> · <strong>ภาษาไทย</strong></p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-v1.1.0-e4b65e?style=flat-square" alt="Version v1.1.0" />
+    <img src="https://img.shields.io/badge/version-v1.2.0-e4b65e?style=flat-square" alt="Version v1.2.0" />
     <img src="https://img.shields.io/badge/stack-Rust_%2B_Tauri_v2-7c5cb8?style=flat-square" alt="Rust + Tauri v2" />
     <img src="https://img.shields.io/badge/platforms-Windows_%7C_macOS_%7C_Linux-2ea44f?style=flat-square" alt="Platforms: Windows, macOS, Linux" />
     <a href="https://eemeemmeex.github.io/rongyok-desk/"><img src="https://img.shields.io/badge/landing_page-GitHub_Pages-1f6feb?style=flat-square" alt="Landing Page" /></a>
   </p>
 
   <p>
-    <a href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.1.0_x64-setup.exe"><img src="https://img.shields.io/badge/Download-Windows_.exe-0078D4?style=for-the-badge&logo=windows" alt="Download Windows .exe" /></a>
-    <a href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.1.0_x64_en-US.msi"><img src="https://img.shields.io/badge/Download-Windows_.msi-005A9E?style=for-the-badge&logo=windows" alt="Download Windows .msi" /></a>
-    <a href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.1.0_aarch64.dmg"><img src="https://img.shields.io/badge/Download-macOS_Apple_Silicon-111111?style=for-the-badge&logo=apple" alt="Download macOS Apple Silicon .dmg" /></a>
-    <a href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.1.0_x64.dmg"><img src="https://img.shields.io/badge/Download-macOS_Intel-333333?style=for-the-badge&logo=apple" alt="Download macOS Intel .dmg" /></a>
-    <a href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok-Desk-1.1.0-x86_64.flatpak"><img src="https://img.shields.io/badge/Download-Linux_.flatpak-4A86CF?style=for-the-badge&logo=linux" alt="Download Linux .flatpak" /></a>
+    <a href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.2.0_x64-setup.exe"><img src="https://img.shields.io/badge/Download-Windows_.exe-0078D4?style=for-the-badge&logo=windows" alt="Download Windows .exe" /></a>
+    <a href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.2.0_x64_en-US.msi"><img src="https://img.shields.io/badge/Download-Windows_.msi-005A9E?style=for-the-badge&logo=windows" alt="Download Windows .msi" /></a>
+    <a href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.2.0_aarch64.dmg"><img src="https://img.shields.io/badge/Download-macOS_Apple_Silicon-111111?style=for-the-badge&logo=apple" alt="Download macOS Apple Silicon .dmg" /></a>
+    <a href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.2.0_x64.dmg"><img src="https://img.shields.io/badge/Download-macOS_Intel-333333?style=for-the-badge&logo=apple" alt="Download macOS Intel .dmg" /></a>
+    <a href="https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok-Desk-1.2.0-x86_64.flatpak"><img src="https://img.shields.io/badge/Download-Linux_.flatpak-4A86CF?style=for-the-badge&logo=linux" alt="Download Linux .flatpak" /></a>
   </p>
 </div>
 
@@ -26,15 +26,15 @@ Rongyok Desk เป็นแอปเดสก์ท็อปขนาดเบ�
 
 ---
 
-## ดาวน์โหลด (`v1.1.0`)
+## ดาวน์โหลด (`v1.2.0`)
 
 | แพลตฟอร์ม | สถาปัตยกรรม | ขนาด | ตัวติดตั้ง |
 | --- | --- | --- | --- |
-| Windows (แนะนำ) | `x64` | 1.19 MB | [Rongyok.Desk_1.1.0_x64-setup.exe](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.1.0_x64-setup.exe) |
-| Windows (MSI) | `x64` | 1.71 MB | [Rongyok.Desk_1.1.0_x64_en-US.msi](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.1.0_x64_en-US.msi) |
-| macOS (Apple Silicon) | `arm64` | 1.75 MB | [Rongyok.Desk_1.1.0_aarch64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.1.0_aarch64.dmg) |
-| macOS (Intel) | `x64` | 1.84 MB | [Rongyok.Desk_1.1.0_x64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.1.0_x64.dmg) |
-| Linux (Flatpak) | `x86_64` | 1.11 MB | [Rongyok-Desk-1.1.0-x86_64.flatpak](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok-Desk-1.1.0-x86_64.flatpak) |
+| Windows (แนะนำ) | `x64` | 1.49 MB | [Rongyok.Desk_1.2.0_x64-setup.exe](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.2.0_x64-setup.exe) |
+| Windows (MSI) | `x64` | 2.10 MB | [Rongyok.Desk_1.2.0_x64_en-US.msi](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.2.0_x64_en-US.msi) |
+| macOS (Apple Silicon) | `arm64` | 2.10 MB | [Rongyok.Desk_1.2.0_aarch64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.2.0_aarch64.dmg) |
+| macOS (Intel) | `x64` | 2.19 MB | [Rongyok.Desk_1.2.0_x64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.2.0_x64.dmg) |
+| Linux (Flatpak) | `x86_64` | 1.27 MB | [Rongyok-Desk-1.2.0-x86_64.flatpak](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok-Desk-1.2.0-x86_64.flatpak) |
 
 <p align="center">
   <img src="shots/now.png" alt="หน้าต่าง Rongyok Desk ขณะเปิด rongyok.com" width="760" />
@@ -44,25 +44,25 @@ Rongyok Desk เป็นแอปเดสก์ท็อปขนาดเบ�
 
 ## วิธีติดตั้ง
 
-> **หมายเหตุ:** ตัวติดตั้ง `v1.1.0` ยังไม่ได้ลงนามดิจิทัล (unsigned) ดังนั้น Windows SmartScreen หรือ macOS Gatekeeper จะแสดงคำเตือนให้กดยืนยันเมื่อเปิดใช้งานครั้งแรก
+> **หมายเหตุ:** ตัวติดตั้ง `v1.2.0` ยังไม่ได้ลงนามดิจิทัล (unsigned) ดังนั้น Windows SmartScreen หรือ macOS Gatekeeper จะแสดงคำเตือนให้กดยืนยันเมื่อเปิดใช้งานครั้งแรก
 
 ### Windows
-1. ดาวน์โหลด [Rongyok.Desk_1.1.0_x64-setup.exe](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.1.0_x64-setup.exe) (ติดตั้งเฉพาะผู้ใช้ปัจจุบัน และดาวน์โหลด Microsoft Edge WebView2 Runtime ให้อัตโนมัติหากยังไม่มี) หรือ [Rongyok.Desk_1.1.0_x64_en-US.msi](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.1.0_x64_en-US.msi)
+1. ดาวน์โหลด [Rongyok.Desk_1.2.0_x64-setup.exe](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.2.0_x64-setup.exe) (ติดตั้งเฉพาะผู้ใช้ปัจจุบัน และดาวน์โหลด Microsoft Edge WebView2 Runtime ให้อัตโนมัติหากยังไม่มี) หรือ [Rongyok.Desk_1.2.0_x64_en-US.msi](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.2.0_x64_en-US.msi)
 2. เปิดรันตัวติดตั้ง
 3. หาก **Windows SmartScreen** แจ้งเตือน ให้กด **More info** แล้วเลือก **Run anyway**
 
 ### macOS (`10.15+`)
-1. ดาวน์โหลด [Rongyok.Desk_1.1.0_aarch64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.1.0_aarch64.dmg) (Apple Silicon) หรือ [Rongyok.Desk_1.1.0_x64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.1.0_x64.dmg) (Intel)
+1. ดาวน์โหลด [Rongyok.Desk_1.2.0_aarch64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.2.0_aarch64.dmg) (Apple Silicon) หรือ [Rongyok.Desk_1.2.0_x64.dmg](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok.Desk_1.2.0_x64.dmg) (Intel)
 2. เปิดไฟล์ `.dmg` แล้วลาก **Rongyok Desk.app** ไปวางใน **Applications**
 3. เมื่อเปิดใช้งานครั้งแรก ให้ **กด Control ค้างแล้วคลิก (หรือคลิกขวา)** ที่แอป เลือก **Open** → **Open** (หรือไปกดอนุญาตที่ **System Settings → Privacy & Security → Open Anyway**)
 
 ### Linux (`x86_64`)
-1. ดาวน์โหลด [Rongyok-Desk-1.1.0-x86_64.flatpak](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok-Desk-1.1.0-x86_64.flatpak)
+1. ดาวน์โหลด [Rongyok-Desk-1.2.0-x86_64.flatpak](https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/Rongyok-Desk-1.2.0-x86_64.flatpak)
 2. ติดตั้งและเปิดใช้งานแพ็กเกจ Flatpak (`com.rongyok.ssb`):
 
 ```bash
 flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-flatpak install --user Rongyok-Desk-1.1.0-x86_64.flatpak
+flatpak install --user Rongyok-Desk-1.2.0-x86_64.flatpak
 flatpak run com.rongyok.ssb
 ```
 
