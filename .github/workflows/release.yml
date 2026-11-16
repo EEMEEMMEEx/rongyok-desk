@@ -66,6 +66,10 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
+      - name: Clean stale release bundles from cache
+        shell: bash
+        run: rm -rf "${{ steps.app.outputs.path }}/target/"*/release/bundle "${{ steps.app.outputs.path }}/target/release/bundle"
+
       - name: Configure Windows Authenticode signing (if secrets set)
         id: win_sign
         shell: pwsh
@@ -195,6 +199,10 @@ jobs:
             ${{ steps.app.outputs.path }}/target
           key: ${{ runner.os }}-${{ matrix.arch }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-${{ matrix.arch }}-cargo-
+
+      - name: Clean stale release bundles from cache
+        shell: bash
+        run: rm -rf "${{ steps.app.outputs.path }}/target/"*/release/bundle "${{ steps.app.outputs.path }}/target/release/bundle"
 
       - name: Configure macOS signing & notarization (if secrets set)
         shell: bash

@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-11-16
+
+### Added
+- Add `auto-tag.yml` workflow to automatically tag `v<version>` and trigger `release.yml` when `tauri.conf.json` version changes on `main`.
+
+### Fixed
+- Clean cached `release/bundle` outputs before Windows and macOS CI builds so stale installers from prior Cargo cache hits are never re-uploaded.
+
 ## [1.3.0] - 2026-11-16
 
 ### Added
