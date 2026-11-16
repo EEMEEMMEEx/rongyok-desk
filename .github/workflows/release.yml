@@ -229,6 +229,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write
     steps:
       - uses: actions/checkout@v4
 
@@ -260,6 +261,7 @@ jobs:
           ]
           if not conf_files:
               raise SystemExit("tauri.conf.json not found")
+          app_dir = conf_files[0].parent
           conf = json.loads(conf_files[0].read_text(encoding="utf-8"))
           conf_version = conf["version"]
           if tag_version != conf_version:
@@ -296,6 +298,10 @@ jobs:
               if not sig_text:
                   raise SystemExit(f"Empty updater signature file: {sig_path}")
               return sig_text
+
+          def size_mb_label(asset_name: str) -> str:
+              size_bytes = (stage_dir / asset_name).stat().st_size
+              return f"{size_bytes / 1_000_000:.2f} MB"
 
           base_url = f"https://github.com/{repo}/releases/download/{tag}"
 
@@ -363,6 +369,24 @@ jobs:
           latest_path = stage_dir / "latest.json"
           latest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
           json.loads(latest_path.read_text(encoding="utf-8"))
+
+          # Keep docs sync metadata outside dist-release/ so gh release does not upload it.
+          meta = {
+              "tag": tag,
+              "version": conf_version,
+              "app_dir": app_dir.as_posix(),
+              "assets": {
+                  "exe": {"name": exe_name, "size": size_mb_label(exe_name)},
+                  "msi": {"name": msi_name, "size": size_mb_label(msi_name)},
+                  "mac_arm": {"name": mac_arm_name, "size": size_mb_label(mac_arm_name)},
+                  "mac_x64": {"name": mac_x64_name, "size": size_mb_label(mac_x64_name)},
+                  "flatpak": {"name": flatpak_name, "size": size_mb_label(flatpak_name)},
+              },
+          }
+          (artifacts_root / "release-meta.json").write_text(
+              json.dumps(meta, indent=2) + "\n", encoding="utf-8"
+          )
+
           print("Staged release assets:")
           for item in sorted(stage_dir.iterdir()):
               print(f"  - {item.name} ({item.stat().st_size} bytes)")
@@ -382,4 +406,230 @@ jobs:
               --title "Rongyok Desk $TAG" \
               --generate-notes \
               --latest
+          fi
+
+      - name: Sync download links & sizes on main and deploy Pages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git checkout -B main origin/main
+
+          changed_files="$(python3 - <<'PY'
+          import json
+          import pathlib
+          import re
+
+          meta = json.loads(
+              pathlib.Path("release-artifacts/release-meta.json").read_text(encoding="utf-8")
+          )
+          ver = meta["version"]
+          tag = meta["tag"]
+          assets = meta["assets"]
+          app_dir = pathlib.Path(meta["app_dir"])
+
+          def parse_semver(raw: str) -> tuple[int, int, int] | None:
+              m = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", raw.strip())
+              return tuple(int(part) for part in m.groups()) if m else None
+
+          rel_tuple = parse_semver(ver)
+          if rel_tuple is None:
+              print("SKIP: non-stable tag", flush=True)
+              raise SystemExit(0)
+
+          conf_path = app_dir / "tauri.conf.json"
+          if conf_path.is_file():
+              main_ver = json.loads(conf_path.read_text(encoding="utf-8")).get("version", "")
+              main_tuple = parse_semver(main_ver)
+              if main_tuple is not None and rel_tuple < main_tuple:
+                  print(f"SKIP: main is already ahead ({main_ver} > {ver})", flush=True)
+                  raise SystemExit(0)
+
+          base_latest = "https://github.com/EEMEEMMEEx/rongyok-desk/releases/latest/download/"
+
+          def update_markdown(text: str) -> str:
+              text = re.sub(
+                  r"(version-v)\d+\.\d+\.\d+(-e4b65e)",
+                  rf"\g<1>{ver}\2",
+                  text,
+              )
+              text = re.sub(r'(alt="Version v)\d+\.\d+\.\d+(")', rf"\g<1>{ver}\2", text)
+              text = re.sub(
+                  r"((?:## Download|## ดาวน์โหลด) \(`v)\d+\.\d+\.\d+(`\))",
+                  rf"\g<1>{ver}\2",
+                  text,
+              )
+              text = re.sub(
+                  r"((?:The|ตัวติดตั้ง) `v)\d+\.\d+\.\d+(`)",
+                  rf"\g<1>{ver}\2",
+                  text,
+              )
+
+              replacements = [
+                  (
+                      r"Rongyok\.Desk_\d+\.\d+\.\d+_x64-setup\.exe",
+                      assets["exe"]["name"],
+                      assets["exe"]["size"],
+                  ),
+                  (
+                      r"Rongyok\.Desk_\d+\.\d+\.\d+_x64_en-US\.msi",
+                      assets["msi"]["name"],
+                      assets["msi"]["size"],
+                  ),
+                  (
+                      r"Rongyok\.Desk_\d+\.\d+\.\d+_aarch64\.dmg",
+                      assets["mac_arm"]["name"],
+                      assets["mac_arm"]["size"],
+                  ),
+                  (
+                      r"Rongyok\.Desk_\d+\.\d+\.\d+_x64\.dmg",
+                      assets["mac_x64"]["name"],
+                      assets["mac_x64"]["size"],
+                  ),
+                  (
+                      r"Rongyok-Desk-\d+\.\d+\.\d+-x86_64\.flatpak",
+                      assets["flatpak"]["name"],
+                      assets["flatpak"]["size"],
+                  ),
+              ]
+              for name_pat, new_name, new_size in replacements:
+                  text = re.sub(
+                      rf"(\|\s*)\d+\.\d+\s+MB(\s*\|\s*\[{name_pat}\]\({re.escape(base_latest)}{name_pat}\))",
+                      rf"\g<1>{new_size}\2",
+                      text,
+                  )
+                  text = re.sub(name_pat, new_name, text)
+              return text
+
+          def update_docs_html(text: str) -> str:
+              text = re.sub(
+                  r"(Rongyok Desk v)\d+\.\d+\.\d+( is a lightweight)",
+                  rf"\g<1>{ver}\2",
+                  text,
+              )
+              text = re.sub(
+                  r'(<span class="brand-version">v)\d+\.\d+\.\d+(</span>)',
+                  rf"\g<1>{ver}\2",
+                  text,
+              )
+              text = re.sub(
+                  r"(<span>Version )\d+\.\d+\.\d+( · Rust \+ Tauri)",
+                  rf"\g<1>{ver}\2",
+                  text,
+              )
+              text = re.sub(
+                  r'(<p class="section-eyebrow">Version )\d+\.\d+\.\d+(</p>)',
+                  rf"\g<1>{ver}\2",
+                  text,
+              )
+              text = re.sub(
+                  r"(Rongyok Desk v)\d+\.\d+\.\d+( across Windows)",
+                  rf"\g<1>{ver}\2",
+                  text,
+              )
+              text = re.sub(
+                  r"(unsigned v)\d+\.\d+\.\d+( builds\.)",
+                  rf"\g<1>{ver}\2",
+                  text,
+              )
+              text = re.sub(
+                  r"(<code>v)\d+\.\d+\.\d+(</code> binaries are unsigned)",
+                  rf"\g<1>{ver}\2",
+                  text,
+              )
+              text = re.sub(
+                  r"(<strong>Rongyok Desk v)\d+\.\d+\.\d+(</strong>)",
+                  rf"\g<1>{ver}\2",
+                  text,
+              )
+
+              card_replacements = [
+                  (
+                      r"Rongyok\.Desk_\d+\.\d+\.\d+_x64-setup\.exe",
+                      assets["exe"]["name"],
+                      assets["exe"]["size"],
+                  ),
+                  (
+                      r"Rongyok\.Desk_\d+\.\d+\.\d+_x64_en-US\.msi",
+                      assets["msi"]["name"],
+                      assets["msi"]["size"],
+                  ),
+                  (
+                      r"Rongyok\.Desk_\d+\.\d+\.\d+_aarch64\.dmg",
+                      assets["mac_arm"]["name"],
+                      assets["mac_arm"]["size"],
+                  ),
+                  (
+                      r"Rongyok\.Desk_\d+\.\d+\.\d+_x64\.dmg",
+                      assets["mac_x64"]["name"],
+                      assets["mac_x64"]["size"],
+                  ),
+                  (
+                      r"Rongyok-Desk-\d+\.\d+\.\d+-x86_64\.flatpak",
+                      assets["flatpak"]["name"],
+                      assets["flatpak"]["size"],
+                  ),
+              ]
+              for name_pat, new_name, new_size in card_replacements:
+                  text = re.sub(
+                      rf"(<dd><code>{name_pat}</code></dd>\s*</div>\s*<div>\s*<dt>Size</dt>\s*<dd>)\d+\.\d+\s+MB(</dd>)",
+                      rf"\g<1>{new_size}\2",
+                      text,
+                      flags=re.DOTALL,
+                  )
+                  text = re.sub(name_pat, new_name, text)
+              return text
+
+          targets = [
+              (app_dir / "README.md", update_markdown),
+              (app_dir / "README.th.md", update_markdown),
+              (app_dir / "docs" / "index.html", update_docs_html),
+          ]
+          updated = []
+          for path, updater in targets:
+              if not path.is_file():
+                  continue
+              before = path.read_text(encoding="utf-8")
+              after = updater(before)
+              if after != before:
+                  path.write_text(after, encoding="utf-8")
+                  updated.append(path.as_posix())
+          print("\n".join(updated))
+          PY
+          )"
+
+          if echo "$changed_files" | grep -q '^SKIP:'; then
+            echo "$changed_files"
+            exit 0
+          fi
+
+          if [ -z "$changed_files" ]; then
+            echo "Docs already up to date for $TAG"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          while IFS= read -r file; do
+            [ -n "$file" ] && git add "$file"
+          done <<< "$changed_files"
+
+          if ! git diff --cached --quiet; then
+            git commit -m "docs: update download links and sizes for $TAG"
+            pushed=false
+            for attempt in 1 2 3; do
+              if git push origin HEAD:main; then
+                pushed=true
+                break
+              fi
+              echo "Push attempt $attempt failed, rebasing onto origin/main..."
+              git pull --rebase origin main
+            done
+            [ "$pushed" = true ]
+          fi
+
+          if echo "$changed_files" | grep -q 'docs/index\.html$'; then
+            gh workflow run pages.yml --ref main
           fi
